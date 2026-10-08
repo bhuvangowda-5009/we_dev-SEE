@@ -1,93 +1,36 @@
-import { useEffect, useState } from 'react'
-import Sidebar from '../components/Sidebar'
+
+import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '../supabase'
-import '../css/dashboard.css'
+import '../css/login.css'
 
-function Profile() {
+function Login() {
 
-  const [profile, setProfile] = useState(null)
+  const navigate = useNavigate()
 
-  const [name, setName] = useState('')
   const [email, setEmail] = useState('')
-  const [role, setRole] = useState('')
+  const [password, setPassword] = useState('')
+  const [loading, setLoading] = useState(false)
 
-  const [editing, setEditing] = useState(false)
-  const [loading, setLoading] = useState(true)
+  const handleSubmit = async (e) => {
 
+    e.preventDefault()
 
-  // ==================== LOAD PROFILE ====================
-
-  const loadProfile = async () => {
-
-    setLoading(true)
-
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .limit(1)
-      .single()
-
-    if (error) {
-
-      console.log('Error loading profile:', error)
-
-      setLoading(false)
-
-      return
-    }
-
-    setProfile(data)
-
-    setName(data.name)
-    setEmail(data.email)
-    setRole(data.role)
-
-    setLoading(false)
-  }
-
-
-  // ==================== LOAD ON PAGE OPEN ====================
-
-  useEffect(() => {
-
-    loadProfile()
-
-  }, [])
-
-
-  // ==================== EDIT PROFILE ====================
-
-  const handleEdit = () => {
-
-    setEditing(true)
-
-  }
-
-
-  // ==================== SAVE PROFILE ====================
-
-  const handleSave = async () => {
-
-    if (!profile) {
+    if (!email || !password) {
+      alert('Please enter email and password')
       return
     }
 
     setLoading(true)
 
-    const { data, error } = await supabase
-      .from('profiles')
-      .update({
-        name: name,
-        email: email,
-        role: role
-      })
-      .eq('id', profile.id)
-      .select()
-      .single()
+    const {
+      error
+    } = await supabase.auth.signInWithPassword({
+      email: email,
+      password: password
+    })
 
     if (error) {
-
-      console.log('Error updating profile:', error)
 
       alert(error.message)
 
@@ -96,282 +39,84 @@ function Profile() {
       return
     }
 
-    setProfile(data)
-
-    setName(data.name)
-    setEmail(data.email)
-    setRole(data.role)
-
-    setEditing(false)
-
     setLoading(false)
 
-    alert('Profile updated successfully')
+    navigate('/dashboard')
   }
 
+  return (
+    <div className="login-page">
 
-  // ==================== LOADING ====================
+      <div className="login-box">
 
-  if (loading && !profile) {
+        <h1>
+          TeamHub
+        </h1>
 
-    return (
+        <p>
+          Team Collaboration Platform
+        </p>
 
-      <div className="dashboard">
+        <form onSubmit={handleSubmit}>
 
-        <Sidebar />
+          <label>
+            Email
+          </label>
 
-        <main className="dashboard-content">
+          <input
+            type="email"
+            placeholder="Enter your email"
+            value={email}
+            onChange={(e) =>
+              setEmail(e.target.value)
+            }
+          />
 
-          <h1>Loading profile...</h1>
+          <label>
+            Password
+          </label>
 
-        </main>
+          <input
+            type="password"
+            placeholder="Enter your password"
+            value={password}
+            onChange={(e) =>
+              setPassword(e.target.value)
+            }
+          />
+
+          <button
+            type="submit"
+            disabled={loading}
+          >
+            {loading
+              ? 'Logging in...'
+              : 'Login'}
+          </button>
+
+        </form>
+
+        <p className="signup-text">
+
+          Don't have an account?{' '}
+
+          <span
+            onClick={() =>
+              navigate('/signup')
+            }
+            style={{
+              cursor: 'pointer'
+            }}
+          >
+            Sign up
+          </span>
+
+        </p>
 
       </div>
 
-    )
-  }
-
-
-  // ==================== PAGE ====================
-
-  return (
-
-    <div className="dashboard">
-
-      <Sidebar />
-
-      <main className="dashboard-content">
-
-
-        {/* ==================== HEADER ==================== */}
-
-        <header className="dashboard-header">
-
-          <div>
-
-            <h1>My Profile</h1>
-
-            <p>
-              View and manage your profile information.
-            </p>
-
-          </div>
-
-
-          {!editing ? (
-
-            <button
-              className="create-button"
-              onClick={handleEdit}
-              disabled={loading}
-            >
-              Edit Profile
-            </button>
-
-          ) : (
-
-            <button
-              className="create-button"
-              onClick={handleSave}
-              disabled={loading}
-            >
-
-              {loading
-                ? 'Saving...'
-                : 'Save Profile'}
-
-            </button>
-
-          )}
-
-        </header>
-
-
-        {/* ==================== PROFILE ==================== */}
-
-        <section className="dashboard-grid">
-
-
-          {/* ==================== PERSONAL INFORMATION ==================== */}
-
-          <div className="dashboard-card">
-
-            <div className="card-title">
-
-              <h2>Personal Information</h2>
-
-            </div>
-
-
-            <div className="team-item">
-
-              <div className="team-icon">
-                👤
-              </div>
-
-
-              <div>
-
-                {editing ? (
-
-                  <input
-                    type="text"
-                    value={name}
-                    onChange={(event) =>
-                      setName(event.target.value)
-                    }
-                  />
-
-                ) : (
-
-                  <h3>{name}</h3>
-
-                )}
-
-                <p>Team Member</p>
-
-              </div>
-
-            </div>
-
-
-            {/* ==================== EMAIL ==================== */}
-
-            <div className="task-item">
-
-              <div>
-
-                <h3>Email</h3>
-
-                {editing ? (
-
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(event) =>
-                      setEmail(event.target.value)
-                    }
-                  />
-
-                ) : (
-
-                  <p>{email}</p>
-
-                )}
-
-              </div>
-
-            </div>
-
-
-            {/* ==================== ROLE ==================== */}
-
-            <div className="task-item">
-
-              <div>
-
-                <h3>Role</h3>
-
-                {editing ? (
-
-                  <input
-                    type="text"
-                    value={role}
-                    onChange={(event) =>
-                      setRole(event.target.value)
-                    }
-                  />
-
-                ) : (
-
-                  <p>{role}</p>
-
-                )}
-
-              </div>
-
-            </div>
-
-          </div>
-
-
-          {/* ==================== ACTIVITY ==================== */}
-
-          <div className="dashboard-card">
-
-            <div className="card-title">
-
-              <h2>My Activity</h2>
-
-            </div>
-
-
-            <div className="task-item">
-
-              <div>
-
-                <h3>Active Tasks</h3>
-
-                <p>
-                  12 tasks currently assigned
-                </p>
-
-              </div>
-
-              <span className="status progress">
-                12
-              </span>
-
-            </div>
-
-
-            <div className="task-item">
-
-              <div>
-
-                <h3>Completed Tasks</h3>
-
-                <p>
-                  18 tasks completed
-                </p>
-
-              </div>
-
-              <span className="status completed">
-                18
-              </span>
-
-            </div>
-
-
-            <div className="task-item">
-
-              <div>
-
-                <h3>Shared Files</h3>
-
-                <p>
-                  8 files uploaded
-                </p>
-
-              </div>
-
-              <span className="status todo">
-                8
-              </span>
-
-            </div>
-
-          </div>
-
-
-        </section>
-
-      </main>
-
     </div>
-
   )
 }
 
-export default Profile
+export default Login

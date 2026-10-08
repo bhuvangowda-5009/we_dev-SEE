@@ -1,186 +1,391 @@
+
 import { useEffect, useState } from 'react'
 import Sidebar from '../components/Sidebar'
+import { supabase } from '../supabase'
 import '../css/dashboard.css'
 
 function Dashboard() {
 
   const [teams, setTeams] = useState([])
+  const [tasks, setTasks] = useState([])
+  const [messageCount, setMessageCount] = useState(0)
+  const [fileCount, setFileCount] = useState(0)
+  const [loading, setLoading] = useState(false)
+
+
+  // ==================== LOAD DASHBOARD ====================
+
+  const loadDashboard = async () => {
+
+    setLoading(true)
+
+    try {
+
+      // ==================== LOAD TEAMS ====================
+
+      const teamsResponse =
+        await fetch('http://localhost:5000/api/teams')
+
+      if (!teamsResponse.ok) {
+        throw new Error('Failed to load teams')
+      }
+
+      const teamsData = await teamsResponse.json()
+
+      setTeams(teamsData)
+
+
+      // ==================== LOAD TASKS ====================
+
+      const tasksResponse =
+        await fetch('http://localhost:5000/api/tasks')
+
+      if (!tasksResponse.ok) {
+        throw new Error('Failed to load tasks')
+      }
+
+      const tasksData = await tasksResponse.json()
+
+      setTasks(tasksData)
+
+
+      // ==================== LOAD MESSAGES ====================
+
+      const { count: messages, error: messageError } =
+        await supabase
+          .from('messages')
+          .select('*', { count: 'exact', head: true })
+
+      if (messageError) {
+        console.log(
+          'Error loading messages:',
+          messageError
+        )
+      } else {
+        setMessageCount(messages || 0)
+      }
+
+
+      // ==================== LOAD FILES ====================
+
+      const { data: files, error: fileError } =
+        await supabase
+          .storage
+          .from('files')
+          .list('', {
+            limit: 1000
+          })
+
+      if (fileError) {
+        console.log(
+          'Error loading files:',
+          fileError
+        )
+      } else {
+        setFileCount(files?.length || 0)
+      }
+
+    } catch (error) {
+
+      console.log(
+        'Error loading dashboard:',
+        error
+      )
+
+    } finally {
+
+      setLoading(false)
+
+    }
+  }
+
+
+  // ==================== LOAD ON PAGE OPEN ====================
 
   useEffect(() => {
 
-    fetch('http://localhost:5000/api/teams')
-      .then(response => response.json())
-      .then(data => {
-        setTeams(data)
-      })
-      .catch(error => {
-        console.log('Error:', error)
-      })
+    loadDashboard()
 
   }, [])
 
+
+  // ==================== ACTIVE TASKS ====================
+
+  const activeTasks = tasks.filter(task =>
+    task.status === 'todo' ||
+    task.status === 'in_progress'
+  ).length
+
+
+  // ==================== RECENT TASKS ====================
+
+  const recentTasks = [...tasks]
+    .sort((a, b) => b.id - a.id)
+    .slice(0, 3)
+
+
+  // ==================== STATUS ====================
+
+  const getStatusClass = (status) => {
+
+    if (status === 'completed') {
+      return 'completed'
+    }
+
+    if (status === 'in_progress') {
+      return 'progress'
+    }
+
+    return 'todo'
+  }
+
+
+  const getStatusText = (status) => {
+
+    if (status === 'completed') {
+      return 'Completed'
+    }
+
+    if (status === 'in_progress') {
+      return 'In Progress'
+    }
+
+    return 'To Do'
+  }
+
+
+  // ==================== PAGE ====================
+
   return (
+
     <div className="dashboard">
 
       <Sidebar />
 
       <main className="dashboard-content">
 
+
+        {/* ==================== HEADER ==================== */}
+
         <header className="dashboard-header">
 
           <div>
-            <h1>Good morning, Bhuvan 👋</h1>
+
+            <h1>
+              Good morning, Bhuvan 👋
+            </h1>
+
             <p>
               Here's what's happening with your teams today.
             </p>
+
           </div>
 
-          <button className="create-button">
-            + Create
+
+          <button
+            className="create-button"
+            onClick={loadDashboard}
+            disabled={loading}
+          >
+
+            {loading
+              ? 'Refreshing...'
+              : '↻ Refresh'}
+
           </button>
 
         </header>
 
 
+        {/* ==================== STATS ==================== */}
+
         <section className="stats">
 
-          <div className="stat-card">
-            <h2>{teams.length}</h2>
-            <p>Teams</p>
-          </div>
 
           <div className="stat-card">
-            <h2>12</h2>
-            <p>Active Tasks</p>
+
+            <h2>
+              {teams.length}
+            </h2>
+
+            <p>
+              Teams
+            </p>
+
           </div>
 
-          <div className="stat-card">
-            <h2>24</h2>
-            <p>Messages</p>
-          </div>
 
           <div className="stat-card">
-            <h2>18</h2>
-            <p>Files</p>
+
+            <h2>
+              {activeTasks}
+            </h2>
+
+            <p>
+              Active Tasks
+            </p>
+
           </div>
+
+
+          <div className="stat-card">
+
+            <h2>
+              {messageCount}
+            </h2>
+
+            <p>
+              Messages
+            </p>
+
+          </div>
+
+
+          <div className="stat-card">
+
+            <h2>
+              {fileCount}
+            </h2>
+
+            <p>
+              Files
+            </p>
+
+          </div>
+
 
         </section>
 
 
+        {/* ==================== DASHBOARD GRID ==================== */}
+
         <section className="dashboard-grid">
 
+
+          {/* ==================== MY TEAMS ==================== */}
 
           <div className="dashboard-card">
 
             <div className="card-title">
 
-              <h2>My Teams</h2>
+              <h2>
+                My Teams
+              </h2>
 
-              <button>
-                View All
+              <button
+                onClick={loadDashboard}
+              >
+                Refresh
               </button>
 
             </div>
 
 
-            {teams.map(team => (
+            {teams.length === 0 ? (
 
-              <div
-                className="team-item"
-                key={team.id}
-              >
+              <p>
+                No teams available.
+              </p>
 
-                <div className="team-icon">
-                  {team.icon}
+            ) : (
+
+              teams.map(team => (
+
+                <div
+                  className="team-item"
+                  key={team.id}
+                >
+
+                  <div className="team-icon">
+
+                    {team.icon || '👥'}
+
+                  </div>
+
+
+                  <div>
+
+                    <h3>
+                      {team.name}
+                    </h3>
+
+                    <p>
+                      {team.members || 0} members
+                    </p>
+
+                  </div>
+
                 </div>
 
-                <div>
+              ))
 
-                  <h3>
-                    {team.name}
-                  </h3>
-
-                  <p>
-                    {team.members} members
-                  </p>
-
-                </div>
-
-              </div>
-
-            ))}
+            )}
 
           </div>
 
 
+          {/* ==================== RECENT TASKS ==================== */}
+
           <div className="dashboard-card">
 
             <div className="card-title">
 
-              <h2>Recent Tasks</h2>
+              <h2>
+                Recent Tasks
+              </h2>
 
-              <button>
-                View All
+              <button
+                onClick={loadDashboard}
+              >
+                Refresh
               </button>
 
             </div>
 
 
-            <div className="task-item">
+            {recentTasks.length === 0 ? (
 
-              <div>
-                <h3>
-                  Build Login Page
-                </h3>
+              <p>
+                No tasks available.
+              </p>
 
-                <p>
-                  Development Team
-                </p>
-              </div>
+            ) : (
 
-              <span className="status progress">
-                In Progress
-              </span>
+              recentTasks.map(task => (
 
-            </div>
+                <div
+                  className="task-item"
+                  key={task.id}
+                >
 
+                  <div>
 
-            <div className="task-item">
+                    <h3>
+                      {task.title}
+                    </h3>
 
-              <div>
-                <h3>
-                  Design Dashboard
-                </h3>
+                    <p>
+                      Team task
+                    </p>
 
-                <p>
-                  Design Team
-                </p>
-              </div>
-
-              <span className="status todo">
-                To Do
-              </span>
-
-            </div>
+                  </div>
 
 
-            <div className="task-item">
+                  <span
+                    className={
+                      `status ${getStatusClass(task.status)}`
+                    }
+                  >
 
-              <div>
-                <h3>
-                  Prepare Presentation
-                </h3>
+                    {getStatusText(task.status)}
 
-                <p>
-                  Marketing Team
-                </p>
-              </div>
+                  </span>
 
-              <span className="status completed">
-                Completed
-              </span>
+                </div>
 
-            </div>
+              ))
+
+            )}
 
           </div>
 
@@ -190,6 +395,7 @@ function Dashboard() {
       </main>
 
     </div>
+
   )
 }
 

@@ -1,441 +1,415 @@
+import { useEffect, useState } from 'react'
+import Sidebar from '../components/Sidebar'
+import { supabase } from '../supabase'
+import '../css/dashboard.css'
 
-const express = require('express')
-const cors = require('cors')
-require('dotenv').config()
+function Team() {
 
-const { createClient } = require('@supabase/supabase-js')
-
-const app = express()
-
-app.use(cors())
-app.use(express.json())
-
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SECRET_KEY
-)
+  const [teams, setTeams] = useState([])
+  const [teamName, setTeamName] = useState('')
+  const [memberCount, setMemberCount] = useState(1)
+  const [members, setMembers] = useState({})
+  const [expandedTeam, setExpandedTeam] = useState(null)
+  const [loading, setLoading] = useState(false)
 
 
-// ==================== HOME ====================
+  // ==================== LOAD TEAMS ====================
 
-app.get('/', (req, res) => {
-  res.json({
-    message: 'TeamHub backend is running'
-  })
-})
+  const loadTeams = async () => {
 
+    try {
 
-// ==================== HEALTH CHECK ====================
+      const response =
+        await fetch('http://localhost:5000/api/teams')
 
-app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'success',
-    message: 'Backend is connected'
-  })
-})
-
-
-// ==================== TEAMS ====================
-
-app.get('/api/teams', async (req, res) => {
-
-  const { data, error } = await supabase
-    .from('teams')
-    .select('*')
-    .order('id')
-
-  if (error) {
-    return res.status(500).json({
-      error: error.message
-    })
-  }
-
-  res.json(data)
-})
-
-
-app.post('/api/teams', async (req, res) => {
-
-  const { name, members, icon } = req.body
-
-  if (!name) {
-    return res.status(400).json({
-      error: 'Team name is required'
-    })
-  }
-
-  const { data, error } = await supabase
-    .from('teams')
-    .insert([
-      {
-        name: name,
-        members: members || 0,
-        icon: icon || '👥'
+      if (!response.ok) {
+        throw new Error('Failed to load teams')
       }
-    ])
-    .select()
 
-  if (error) {
-    return res.status(500).json({
-      error: error.message
-    })
+      const data = await response.json()
+
+      setTeams(data)
+
+    } catch (error) {
+
+      console.log('Error loading teams:', error)
+
+      alert('Unable to load teams')
+
+    }
   }
 
-  res.status(201).json(data[0])
-})
+
+  // ==================== LOAD ON PAGE OPEN ====================
+
+  useEffect(() => {
+
+    loadTeams()
+
+  }, [])
 
 
-// ==================== TASKS ====================
+  // ==================== LOAD MEMBERS ====================
 
-app.get('/api/tasks', async (req, res) => {
+  const loadMembers = async (teamId) => {
 
-  const { data, error } = await supabase
-    .from('tasks')
-    .select('*')
-    .order('id')
+    const { data, error } = await supabase
+      .from('team_members')
+      .select('*')
+      .eq('team_id', teamId)
+      .order('id')
 
-  if (error) {
-    return res.status(500).json({
-      error: error.message
-    })
-  }
+    if (error) {
 
-  res.json(data)
-})
+      console.log('Error loading members:', error)
 
+      alert('Unable to load members')
 
-app.post('/api/tasks', async (req, res) => {
-
-  const { title, description, status } = req.body
-
-  if (!title) {
-    return res.status(400).json({
-      error: 'Task title is required'
-    })
-  }
-
-  const { data, error } = await supabase
-    .from('tasks')
-    .insert([
-      {
-        title: title,
-        description: description || '',
-        status: status || 'todo'
-      }
-    ])
-    .select()
-
-  if (error) {
-    return res.status(500).json({
-      error: error.message
-    })
-  }
-
-  res.status(201).json(data[0])
-})
-
-
-app.put('/api/tasks/:id', async (req, res) => {
-
-  const { id } = req.params
-  const { status } = req.body
-
-  if (!status) {
-    return res.status(400).json({
-      error: 'Task status is required'
-    })
-  }
-
-  const { data, error } = await supabase
-    .from('tasks')
-    .update({
-      status: status
-    })
-    .eq('id', id)
-    .select()
-
-  if (error) {
-    return res.status(500).json({
-      error: error.message
-    })
-  }
-
-  if (!data || data.length === 0) {
-    return res.status(404).json({
-      error: 'Task not found'
-    })
-  }
-
-  res.json(data[0])
-})
-
-
-// ==================== MESSAGES ====================
-
-app.get('/api/messages', async (req, res) => {
-
-  const { data, error } = await supabase
-    .from('messages')
-    .select('*')
-    .order('created_at')
-
-  if (error) {
-    return res.status(500).json({
-      error: error.message
-    })
-  }
-
-  res.json(data)
-})
-
-
-app.post('/api/messages', async (req, res) => {
-
-  const { sender, message } = req.body
-
-  if (!sender || !message) {
-    return res.status(400).json({
-      error: 'Sender and message are required'
-    })
-  }
-
-  const { data, error } = await supabase
-    .from('messages')
-    .insert([
-      {
-        sender: sender,
-        message: message
-      }
-    ])
-    .select()
-
-  if (error) {
-    return res.status(500).json({
-      error: error.message
-    })
-  }
-
-  res.status(201).json(data[0])
-})
-
-
-// ==================== FILES ====================
-
-// Get uploaded files
-
-app.get('/api/files', async (req, res) => {
-
-  const { data, error } = await supabase
-    .storage
-    .from('files')
-    .list('', {
-      limit: 100,
-      sortBy: {
-        column: 'created_at',
-        order: 'desc'
-      }
-    })
-
-  if (error) {
-    return res.status(500).json({
-      error: error.message
-    })
-  }
-
-  const files = data.map(file => {
-
-    const { data: publicData } =
-      supabase
-        .storage
-        .from('files')
-        .getPublicUrl(file.name)
-
-    return {
-      name: file.name,
-      url: publicData.publicUrl,
-      created_at: file.created_at
+      return
     }
 
-  })
+    setMembers(previous => ({
+      ...previous,
+      [teamId]: data
+    }))
 
-  res.json(files)
-})
+    setExpandedTeam(teamId)
+  }
 
 
-// Upload file
+  // ==================== VIEW MEMBERS ====================
 
-app.post('/api/files/upload', async (req, res) => {
+  const toggleMembers = async (teamId) => {
 
-  try {
+    if (expandedTeam === teamId) {
 
-    const chunks = []
+      setExpandedTeam(null)
 
-    req.on('data', chunk => {
-      chunks.push(chunk)
-    })
+      return
+    }
 
-    req.on('end', async () => {
+    await loadMembers(teamId)
+  }
 
-      const body = Buffer.concat(chunks)
 
-      const contentType =
-        req.headers['content-type'] || ''
+  // ==================== CREATE TEAM ====================
 
-      const boundaryMatch =
-        contentType.match(/boundary=(.+)/)
+  const createTeam = async () => {
 
-      if (!boundaryMatch) {
-        return res.status(400).json({
-          error: 'Invalid file upload'
-        })
-      }
+    if (!teamName.trim()) {
 
-      const boundary =
-        Buffer.from('--' + boundaryMatch[1])
+      alert('Please enter a team name')
 
-      const parts = splitMultipart(body, boundary)
+      return
+    }
 
-      let fileBuffer = null
-      let fileName = null
+    if (memberCount < 1) {
 
-      for (const part of parts) {
+      alert('Number of members must be at least 1')
 
-        const headerEnd =
-          part.indexOf(
-            Buffer.from('\r\n\r\n')
-          )
+      return
+    }
 
-        if (headerEnd === -1) {
-          continue
-        }
+    setLoading(true)
 
-        const headers =
-          part
-            .slice(0, headerEnd)
-            .toString()
+    try {
 
-        const content =
-          part.slice(headerEnd + 4)
+      // Get current profile
 
-        const nameMatch =
-          headers.match(
-            /filename="([^"]+)"/
-          )
-
-        if (nameMatch) {
-
-          fileName = nameMatch[1]
-
-          fileBuffer = content
-
-          if (
-            fileBuffer
-              .slice(-2)
-              .toString() === '\r\n'
-          ) {
-            fileBuffer =
-              fileBuffer.slice(0, -2)
-          }
-
-          break
-        }
-      }
-
-      if (!fileBuffer || !fileName) {
-        return res.status(400).json({
-          error: 'No file selected'
-        })
-      }
-
-      const filePath =
-        Date.now() + '-' + fileName
-
-      const { error } =
+      const { data: profile, error: profileError } =
         await supabase
-          .storage
-          .from('files')
-          .upload(
-            filePath,
-            fileBuffer,
-            {
-              contentType:
-                req.headers['content-type'],
-              upsert: false
-            }
-          )
+          .from('profiles')
+          .select('*')
+          .limit(1)
+          .single()
 
-      if (error) {
-        return res.status(500).json({
-          error: error.message
-        })
+      if (profileError) {
+
+        throw new Error('Unable to load your profile')
+
       }
 
-      const { data: publicData } =
-        supabase
-          .storage
-          .from('files')
-          .getPublicUrl(filePath)
 
-      res.status(201).json({
-        name: fileName,
-        url: publicData.publicUrl
-      })
+      // Create team
 
-    })
+      const response =
+        await fetch('http://localhost:5000/api/teams', {
 
-  } catch (error) {
+          method: 'POST',
 
-    res.status(500).json({
-      error: error.message
-    })
+          headers: {
+            'Content-Type': 'application/json'
+          },
 
+          body: JSON.stringify({
+            name: teamName,
+            members: Number(memberCount),
+            icon: '👥'
+          })
+
+        })
+
+
+      if (!response.ok) {
+
+        throw new Error('Failed to create team')
+
+      }
+
+
+      const newTeam = await response.json()
+
+
+      // Add current profile as first member
+
+      const { error: memberError } =
+        await supabase
+          .from('team_members')
+          .insert([
+            {
+              team_id: newTeam.id,
+              name: profile.name,
+              email: profile.email,
+              role: profile.role || 'Team Member'
+            }
+          ])
+
+
+      if (memberError) {
+
+        console.log(
+          'Error adding team member:',
+          memberError
+        )
+
+      }
+
+
+      setTeamName('')
+      setMemberCount(1)
+
+      await loadTeams()
+
+      alert('Team created successfully')
+
+    } catch (error) {
+
+      console.log('Error creating team:', error)
+
+      alert(error.message)
+
+    } finally {
+
+      setLoading(false)
+
+    }
   }
 
-})
+
+  // ==================== PAGE ====================
+
+  return (
+
+    <div className="dashboard">
+
+      <Sidebar />
+
+      <main className="dashboard-content">
 
 
-// Split multipart data
+        {/* ==================== HEADER ==================== */}
 
-function splitMultipart(buffer, boundary) {
+        <header className="dashboard-header">
 
-  const parts = []
+          <div>
 
-  let start = 0
+            <h1>Teams</h1>
 
-  while (true) {
+            <p>
+              Create and manage your teams.
+            </p>
 
-    const index =
-      buffer.indexOf(boundary, start)
+          </div>
 
-    if (index === -1) {
-      break
-    }
+        </header>
 
-    if (index > start) {
 
-      parts.push(
-        buffer.slice(start, index)
-      )
+        {/* ==================== CREATE TEAM ==================== */}
 
-    }
+        <section className="dashboard-card">
 
-    start =
-      index + boundary.length
+          <div className="card-title">
 
-  }
+            <h2>Create Team</h2>
 
-  return parts
+          </div>
+
+
+          <div className="task-item">
+
+            <input
+              type="text"
+              placeholder="Enter team name"
+              value={teamName}
+              onChange={(event) =>
+                setTeamName(event.target.value)
+              }
+            />
+
+            <input
+              type="number"
+              min="1"
+              placeholder="Number of members"
+              value={memberCount}
+              onChange={(event) =>
+                setMemberCount(event.target.value)
+              }
+            />
+
+            <button
+              className="create-button"
+              onClick={createTeam}
+              disabled={loading}
+            >
+
+              {loading
+                ? 'Creating...'
+                : 'Create Team'}
+
+            </button>
+
+          </div>
+
+        </section>
+
+
+        {/* ==================== TEAM LIST ==================== */}
+
+        <section className="dashboard-card">
+
+          <div className="card-title">
+
+            <h2>My Teams</h2>
+
+            <button onClick={loadTeams}>
+              Refresh
+            </button>
+
+          </div>
+
+
+          {teams.length === 0 ? (
+
+            <p>
+              No teams available.
+            </p>
+
+          ) : (
+
+            teams.map(team => (
+
+              <div key={team.id}>
+
+                <div className="task-item">
+
+                  <div>
+
+                    <h3>
+                      {team.icon || '👥'} {team.name}
+                    </h3>
+
+                    <p>
+                      {team.members || 0} members
+                    </p>
+
+                  </div>
+
+
+                  <button
+                    onClick={() =>
+                      toggleMembers(team.id)
+                    }
+                  >
+                    {expandedTeam === team.id
+                      ? 'Hide Members'
+                      : 'View Members'}
+                  </button>
+
+                </div>
+
+
+                {/* ==================== MEMBERS ==================== */}
+
+                {expandedTeam === team.id && (
+
+                  <div className="dashboard-card">
+
+                    <h3>
+                      Team Members
+                    </h3>
+
+
+                    {(!members[team.id] ||
+                      members[team.id].length === 0) ? (
+
+                      <p>
+                        No members added yet.
+                      </p>
+
+                    ) : (
+
+                      members[team.id].map(member => (
+
+                        <div
+                          className="team-item"
+                          key={member.id}
+                        >
+
+                          <div className="team-icon">
+                            {member.name
+                              .charAt(0)
+                              .toUpperCase()}
+                          </div>
+
+                          <div>
+
+                            <h3>
+                              {member.name}
+                            </h3>
+
+                            <p>
+                              {member.email}
+                            </p>
+
+                            <small>
+                              {member.role}
+                            </small>
+
+                          </div>
+
+                        </div>
+
+                      ))
+
+                    )}
+
+                  </div>
+
+                )}
+
+              </div>
+
+            ))
+
+          )}
+
+        </section>
+
+      </main>
+
+    </div>
+
+  )
 }
 
-
-// ==================== SERVER ====================
-
-const PORT = 5000
-
-app.listen(PORT, () => {
-
-  console.log(
-    `Server running on http://localhost:${PORT}`
-  )
-
-})
+export default Team

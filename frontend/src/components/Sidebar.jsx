@@ -1,7 +1,32 @@
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { supabase } from '../supabase'
 import '../css/components.css'
 
 function Sidebar() {
+
+  const [profileName, setProfileName] = useState('Bhuvan')
+
+  useEffect(() => {
+    loadProfile()
+  }, [])
+
+  const loadProfile = async () => {
+
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('name')
+      .limit(1)
+      .single()
+
+    if (error) {
+      console.log('Error loading profile:', error)
+      return
+    }
+
+    setProfileName(data.name)
+  }
+
   return (
     <aside className="sidebar">
 
@@ -38,11 +63,11 @@ function Sidebar() {
       <div className="sidebar-profile">
 
         <div className="avatar">
-          B
+          {profileName.charAt(0).toUpperCase()}
         </div>
 
         <div>
-          <strong>Bhuvan</strong>
+          <strong>{profileName}</strong>
           <small>Team Member</small>
         </div>
 
