@@ -1,30 +1,45 @@
+
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../supabase'
 import '../css/components.css'
 
 function Sidebar() {
-
-  const [profileName, setProfileName] = useState('Bhuvan')
+  const [profileName, setProfileName] = useState('User')
 
   useEffect(() => {
     loadProfile()
   }, [])
 
   const loadProfile = async () => {
+    try {
+      // Get currently logged-in user
+      const {
+        data: { user },
+        error: userError
+      } = await supabase.auth.getUser()
 
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('name')
-      .limit(1)
-      .single()
+      if (userError || !user) {
+        console.log('User not found:', userError)
+        return
+      }
 
-    if (error) {
-      console.log('Error loading profile:', error)
-      return
+      // Get profile belonging to logged-in user's email
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('name')
+        .eq('email', user.email)
+        .single()
+
+      if (error) {
+        console.log('Error loading profile:', error)
+        return
+      }
+
+      setProfileName(data.name)
+    } catch (error) {
+      console.log('Unexpected profile error:', error)
     }
-
-    setProfileName(data.name)
   }
 
   return (
@@ -33,7 +48,6 @@ function Sidebar() {
       <h2>TeamHub</h2>
 
       <nav>
-
         <Link to="/dashboard">
           🏠 Dashboard
         </Link>
@@ -57,7 +71,6 @@ function Sidebar() {
         <Link to="/profile">
           👤 Profile
         </Link>
-
       </nav>
 
       <div className="sidebar-profile">

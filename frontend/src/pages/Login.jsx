@@ -5,7 +5,6 @@ import { supabase } from '../supabase'
 import '../css/login.css'
 
 function Login() {
-
   const navigate = useNavigate()
 
   const [email, setEmail] = useState('')
@@ -15,30 +14,53 @@ function Login() {
   const handleSubmit = async (e) => {
     e.preventDefault()
 
-    if (!email || !password) {
+    if (!email.trim() || !password) {
       alert('Please enter email and password')
       return
     }
 
     setLoading(true)
 
-    const { data, error } =
-      await supabase.auth.signInWithPassword({
-        email: email,
-        password: password
-      })
+    try {
+      const { data, error } =
+        await supabase.auth.signInWithPassword({
+          email: email.trim(),
+          password: password
+        })
 
-    if (error) {
-      alert(error.message)
+      if (error) {
+        console.log('Login error:', error.message)
+
+        alert(
+          'Login failed: ' +
+          error.message
+        )
+
+        setLoading(false)
+        return
+      }
+
+      console.log(
+        'Login successful:',
+        data.user.email
+      )
+
       setLoading(false)
-      return
+
+      navigate('/dashboard')
+
+    } catch (error) {
+      console.log(
+        'Unexpected login error:',
+        error
+      )
+
+      alert(
+        'Something went wrong. Please try again.'
+      )
+
+      setLoading(false)
     }
-
-    console.log('Logged in user:', data.user)
-
-    setLoading(false)
-
-    navigate('/dashboard')
   }
 
   return (
@@ -46,7 +68,9 @@ function Login() {
 
       <div className="login-box">
 
-        <h1>TeamHub</h1>
+        <h1>
+          TeamHub
+        </h1>
 
         <p>
           Team Collaboration Platform
@@ -54,7 +78,9 @@ function Login() {
 
         <form onSubmit={handleSubmit}>
 
-          <label>Email</label>
+          <label>
+            Email
+          </label>
 
           <input
             type="email"
@@ -65,7 +91,9 @@ function Login() {
             }
           />
 
-          <label>Password</label>
+          <label>
+            Password
+          </label>
 
           <input
             type="password"
@@ -80,13 +108,29 @@ function Login() {
             type="submit"
             disabled={loading}
           >
-            {loading ? 'Logging in...' : 'Login'}
+            {loading
+              ? 'Logging in...'
+              : 'Login'}
           </button>
 
         </form>
 
         <p className="signup-text">
-          Don't have an account? <span>Sign up</span>
+
+          Don't have an account?{' '}
+
+          <span
+            onClick={() =>
+              navigate('/signup')
+            }
+            style={{
+              cursor: 'pointer',
+              textDecoration: 'underline'
+            }}
+          >
+            Sign up
+          </span>
+
         </p>
 
       </div>

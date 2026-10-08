@@ -1,122 +1,235 @@
-
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../supabase'
-import '../css/login.css'
+import Sidebar from '../components/Sidebar'
+import '../css/dashboard.css'
 
-function Login() {
-
+function Profile() {
   const navigate = useNavigate()
 
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [profile, setProfile] = useState({
+    name: '',
+    email: ''
+  })
 
-  const handleSubmit = async (e) => {
+  const [editing, setEditing] = useState(false)
+  const [name, setName] = useState('')
+  const [loading, setLoading] = useState(true)
 
-    e.preventDefault()
+  useEffect(() => {
+    loadProfile()
+  }, [])
 
-    if (!email || !password) {
-      alert('Please enter email and password')
+  const loadProfile = async () => {
+    const {
+      data: { user }
+    } = await supabase.auth.getUser()
+
+    if (!user) {
+      navigate('/login')
       return
     }
 
-    setLoading(true)
-
-    const {
-      error
-    } = await supabase.auth.signInWithPassword({
-      email: email,
-      password: password
-    })
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('name, email')
+      .eq('email', user.email)
+      .maybeSingle()
 
     if (error) {
+      console.log('Error loading profile:', error)
 
-      alert(error.message)
+      setProfile({
+        name: user.user_metadata?.name || 'Bhuvan',
+        email: user.email
+      })
 
+      setName(user.user_metadata?.name || 'Bhuvan')
       setLoading(false)
 
       return
     }
 
-    setLoading(false)
+    if (!data) {
+      setProfile({
+        name: user.user_metadata?.name || 'Bhuvan',
+        email: user.email
+      })
 
-    navigate('/dashboard')
+      setName(user.user_metadata?.name || 'Bhuvan')
+      setLoading(false)
+
+      return
+    }
+
+    setProfile({
+      name: data.name,
+      email: data.email || user.email
+    })
+
+    setName(data.name)
+    setLoading(false)
+  }
+
+  const handleSave = async () => {
+    const {
+      data: { user }
+    } = await supabase.auth.getUser()
+
+    if (!user) {
+      navigate('/login')
+      return
+    }
+
+    const { data, error } = await supabase
+      .from('profiles')
+      .update({
+        name: name
+      })
+      .eq('email', user.email)
+      .select()
+
+    if (error) {
+      alert(error.message)
+      return
+    }
+
+    if (!data || data.length === 0) {
+      alert('Profile record not found')
+      return
+    }
+
+    setProfile({
+      ...profile,
+      name: name
+    })
+
+    setEditing(false)
+
+    alert('Profile updated successfully')
+  }
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut()
+    navigate('/login')
+  }
+
+  if (loading) {
+    return (
+      <div className="dashboard">
+        <Sidebar />
+
+        <main className="dashboard-content">
+          <h1>Loading profile...</h1>
+        </main>
+      </div>
+    )
   }
 
   return (
-    <div className="login-page">
+    <div className="dashboard">
 
-      <div className="login-box">
+      <Sidebar />
 
-        <h1>
-          TeamHub
-        </h1>
+      <main className="dashboard-content">
 
-        <p>
-          Team Collaboration Platform
-        </p>
+        <header className="dashboard-header">
 
-        <form onSubmit={handleSubmit}>
+          <div>
+            <h1>My Profile</h1>
 
-          <label>
-            Email
-          </label>
+            <p>
+              Manage your account information.
+            </p>
+          </div>
 
-          <input
-            type="email"
-            placeholder="Enter your email"
-            value={email}
-            onChange={(e) =>
-              setEmail(e.target.value)
-            }
-          />
+        </header>
 
-          <label>
-            Password
-          </label>
+        <section className="dashboard-card">
 
-          <input
-            type="password"
-            placeholder="Enter your password"
-            value={password}
-            onChange={(e) =>
-              setPassword(e.target.value)
-            }
-          />
+          <div className="card-title">
+            <h2>Profile Information</h2>
+          </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-          >
-            {loading
-              ? 'Logging in...'
-              : 'Login'}
-          </button>
+          <div style={{ marginTop: '20px' }}>
 
-        </form>
+            <h3>Name</h3>
 
-        <p className="signup-text">
+            {editing ? (
 
-          Don't have an account?{' '}
+              <input
+                type="text"
+                value={name}
+                onChange={(e) =>
+                  setName(e.target.value)
+                }
+              />
 
-          <span
-            onClick={() =>
-              navigate('/signup')
-            }
-            style={{
-              cursor: 'pointer'
-            }}
-          >
-            Sign up
-          </span>
+            ) : (
 
-        </p>
+              <p>{profile.name}</p>
 
-      </div>
+            )}
+
+          </div>
+
+          <div style={{ marginTop: '20px' }}>
+
+            <h3>Email</h3>
+
+            <p>{profile.email}</p>
+
+          </div>
+
+          <div style={{ marginTop: '25px' }}>
+
+            {editing ? (
+
+              <>
+                <button
+                  onClick={handleSave}
+                  className="create-button"
+                >
+                  Save Changes
+                </button>
+
+                <button
+                  onClick={() => {
+                    setName(profile.name)
+                    setEditing(false)
+                  }}
+                  style={{ marginLeft: '10px' }}
+                >
+                  Cancel
+                </button>
+              </>
+
+            ) : (
+
+              <button
+                onClick={() => setEditing(true)}
+                className="create-button"
+              >
+                Edit Profile
+              </button>
+
+            )}
+
+            <button
+              onClick={handleLogout}
+              style={{ marginLeft: '10px' }}
+            >
+              Logout
+            </button>
+
+          </div>
+
+        </section>
+
+      </main>
 
     </div>
   )
 }
 
-export default Login
+export default Profile

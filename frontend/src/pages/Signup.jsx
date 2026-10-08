@@ -1,4 +1,3 @@
-
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../supabase'
@@ -30,58 +29,134 @@ function Signup() {
 
     setLoading(true)
 
-    const { data, error } =
-      await supabase.auth.signUp({
-        email: email,
-        password: password
-      })
+    try {
 
-    if (error) {
-      alert(error.message)
-      setLoading(false)
-      return
-    }
+      // ==================== CREATE SUPABASE ACCOUNT ====================
 
-    if (data.user) {
+      const { data, error } =
+        await supabase.auth.signUp({
 
-      const { error: profileError } =
-        await supabase
-          .from('profiles')
-          .insert([
-            {
-              name: name,
-              email: email,
-              role: role
+          email: email.trim(),
+
+          password: password,
+
+          options: {
+
+            // User will return to the login page
+            // after clicking the verification link.
+            emailRedirectTo:
+              window.location.origin + '/login',
+
+            // Store name and role in Supabase Auth metadata.
+            data: {
+              name: name.trim(),
+              role: role.trim()
             }
-          ])
 
-      if (profileError) {
+          }
+
+        })
+
+
+      // ==================== SIGNUP ERROR ====================
+
+      if (error) {
+
         console.log(
-          'Profile creation error:',
-          profileError
+          'Signup error:',
+          error
         )
+
+        alert(error.message)
+
+        setLoading(false)
+
+        return
       }
+
+
+      // ==================== CREATE PROFILE ====================
+
+      if (data.user) {
+
+        const { error: profileError } =
+          await supabase
+            .from('profiles')
+            .insert([
+              {
+                name: name.trim(),
+                email: email.trim(),
+                role: role.trim()
+              }
+            ])
+
+
+        if (profileError) {
+
+          console.log(
+            'Profile creation error:',
+            profileError
+          )
+
+          alert(
+            'Account created, but profile could not be created: ' +
+            profileError.message
+          )
+
+          setLoading(false)
+
+          return
+        }
+      }
+
+
+      // ==================== SUCCESS ====================
+
+      alert(
+        'Account created successfully!\n\n' +
+        'Please check your email and click the verification link before logging in.'
+      )
+
+      setLoading(false)
+
+      navigate('/login')
+
+    } catch (error) {
+
+      console.log(
+        'Signup error:',
+        error
+      )
+
+      alert(error.message)
+
+      setLoading(false)
     }
-
-    setLoading(false)
-
-    alert('Account created successfully')
-
-    navigate('/login')
   }
 
+
   return (
+
     <div className="login-page">
 
       <div className="login-box">
 
-        <h1>TeamHub</h1>
+        <h1>
+          TeamHub
+        </h1>
 
-        <p>Create your account</p>
+        <p>
+          Create your account
+        </p>
+
 
         <form onSubmit={handleSubmit}>
 
-          <label>Name</label>
+          {/* ==================== NAME ==================== */}
+
+          <label>
+            Name
+          </label>
 
           <input
             type="text"
@@ -92,7 +167,12 @@ function Signup() {
             }
           />
 
-          <label>Email</label>
+
+          {/* ==================== EMAIL ==================== */}
+
+          <label>
+            Email
+          </label>
 
           <input
             type="email"
@@ -103,7 +183,12 @@ function Signup() {
             }
           />
 
-          <label>Password</label>
+
+          {/* ==================== PASSWORD ==================== */}
+
+          <label>
+            Password
+          </label>
 
           <input
             type="password"
@@ -114,7 +199,12 @@ function Signup() {
             }
           />
 
-          <label>Role</label>
+
+          {/* ==================== ROLE ==================== */}
+
+          <label>
+            Role
+          </label>
 
           <input
             type="text"
@@ -125,18 +215,27 @@ function Signup() {
             }
           />
 
+
+          {/* ==================== SIGNUP BUTTON ==================== */}
+
           <button
             type="submit"
             disabled={loading}
           >
+
             {loading
               ? 'Creating account...'
               : 'Sign Up'}
+
           </button>
 
         </form>
 
+
+        {/* ==================== LOGIN ==================== */}
+
         <p className="signup-text">
+
           Already have an account?{' '}
 
           <span
@@ -155,6 +254,7 @@ function Signup() {
       </div>
 
     </div>
+
   )
 }
 

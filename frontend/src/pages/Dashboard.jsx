@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from 'react'
 import Sidebar from '../components/Sidebar'
 import { supabase } from '../supabase'
@@ -11,6 +10,35 @@ function Dashboard() {
   const [messageCount, setMessageCount] = useState(0)
   const [fileCount, setFileCount] = useState(0)
   const [loading, setLoading] = useState(false)
+  const [userName, setUserName] = useState('User')
+
+
+  // ==================== GET LOGGED-IN USER ====================
+
+  const loadUser = async () => {
+
+    const {
+      data: { user },
+      error
+    } = await supabase.auth.getUser()
+
+    if (error) {
+      console.log('Error loading user:', error)
+      return
+    }
+
+    if (user) {
+
+      const name =
+        user.user_metadata?.name ||
+        user.user_metadata?.full_name ||
+        user.email?.split('@')[0] ||
+        'User'
+
+      setUserName(name)
+
+    }
+  }
 
 
   // ==================== LOAD DASHBOARD ====================
@@ -51,38 +79,53 @@ function Dashboard() {
 
       // ==================== LOAD MESSAGES ====================
 
-      const { count: messages, error: messageError } =
-        await supabase
-          .from('messages')
-          .select('*', { count: 'exact', head: true })
+      const {
+        count: messages,
+        error: messageError
+      } = await supabase
+        .from('messages')
+        .select('*', {
+          count: 'exact',
+          head: true
+        })
 
       if (messageError) {
+
         console.log(
           'Error loading messages:',
           messageError
         )
+
       } else {
+
         setMessageCount(messages || 0)
+
       }
 
 
       // ==================== LOAD FILES ====================
 
-      const { data: files, error: fileError } =
-        await supabase
-          .storage
-          .from('files')
-          .list('', {
-            limit: 1000
-          })
+      const {
+        data: files,
+        error: fileError
+      } = await supabase
+        .storage
+        .from('files')
+        .list('', {
+          limit: 1000
+        })
 
       if (fileError) {
+
         console.log(
           'Error loading files:',
           fileError
         )
+
       } else {
+
         setFileCount(files?.length || 0)
+
       }
 
     } catch (error) {
@@ -104,6 +147,7 @@ function Dashboard() {
 
   useEffect(() => {
 
+    loadUser()
     loadDashboard()
 
   }, [])
@@ -172,7 +216,7 @@ function Dashboard() {
           <div>
 
             <h1>
-              Good morning, Bhuvan 👋
+              Good morning, {userName} 👋
             </h1>
 
             <p>
