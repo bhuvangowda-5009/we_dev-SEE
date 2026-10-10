@@ -51,17 +51,17 @@ function Login() {
         <h1>TeamHub</h1>
         <p>Team Collaboration Platform</p>
 
-        <form onSubmit={handleSubmit} autoComplete="off">
+        <form onSubmit={handleSubmit} autoComplete="on">
           <label htmlFor="login-email">Email</label>
 
           <input
             id="login-email"
             type="email"
-            name="login-email"
+            name="email"
             placeholder="Enter your email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            autoComplete="off"
+            autoComplete="username"
             required
           />
 
@@ -70,21 +70,23 @@ function Login() {
           <input
             id="login-password"
             type={showPassword ? 'text' : 'password'}
-            name="login-password"
+            name="password"
             placeholder="Enter your password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            autoComplete="new-password"
+            autoComplete="current-password"
             required
           />
 
           <div style={{ marginTop: '8px', marginBottom: '12px' }}>
-            <label style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              cursor: 'pointer'
-            }}>
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                cursor: 'pointer'
+              }}
+            >
               <input
                 type="checkbox"
                 checked={showPassword}
