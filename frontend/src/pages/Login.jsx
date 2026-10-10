@@ -51,17 +51,17 @@ function Login() {
         <h1>TeamHub</h1>
         <p>Team Collaboration Platform</p>
 
-        <form onSubmit={handleSubmit} autoComplete="on">
+        <form onSubmit={handleSubmit} autoComplete="off">
           <label htmlFor="login-email">Email</label>
 
           <input
             id="login-email"
             type="email"
-            name="email"
+            name="login-email"
             placeholder="Enter your email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            autoComplete="username"
+            autoComplete="off"
             required
           />
 
@@ -70,11 +70,14 @@ function Login() {
           <input
             id="login-password"
             type={showPassword ? 'text' : 'password'}
-            name="password"
+            name="login-password"
             placeholder="Enter your password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            autoComplete="current-password"
+            autoComplete="off"
+            data-lpignore="true"
+            data-1p-ignore="true"
+            spellCheck={false}
             required
           />
 
