@@ -5,7 +5,13 @@ import { supabase } from '../supabase'
 import '../css/dashboard.css'
 import '../css/teams.css'
 
-const API_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api`
+const API_ROOT = (
+  import.meta.env.VITE_API_URL || 'http://localhost:5000'
+).replace(/\/+$/, '')
+
+const API_URL = API_ROOT.endsWith('/api')
+  ? API_ROOT
+  : `${API_ROOT}/api`
 
 function Team() {
   const [teams, setTeams] = useState([])
@@ -20,6 +26,7 @@ function Team() {
   const [loading, setLoading] = useState(false)
   const [joining, setJoining] = useState(false)
   const [searching, setSearching] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
   const [currentUser, setCurrentUser] = useState(null)
   const [createdCode, setCreatedCode] = useState('')
 
@@ -28,26 +35,32 @@ function Team() {
   }, [])
 
   async function initialize() {
-    const {
-      data: { user },
-      error
-    } = await supabase.auth.getUser()
+    try {
+      const {
+        data: { user },
+        error
+      } = await supabase.auth.getUser()
 
-    if (error || !user) {
-      alert('Please log in first.')
-      return
+      if (error || !user) {
+        alert('Please log in first.')
+        return
+      }
+
+      setCurrentUser(user)
+      await loadTeams()
+    } catch (error) {
+      console.error('Initialize error:', error)
+      alert('Unable to initialize the Teams page. Please log in again.')
     }
-
-    setCurrentUser(user)
-    await loadTeams()
   }
 
   async function getAccessToken() {
     const {
-      data: { session }
+      data: { session },
+      error
     } = await supabase.auth.getSession()
 
-    if (!session?.access_token) {
+    if (error || !session?.access_token) {
       throw new Error('Your session has expired. Please log in again.')
     }
 
@@ -55,18 +68,29 @@ function Team() {
   }
 
   async function loadTeams() {
-    try {
-      const response = await fetch(`${API_URL}/teams`)
+    setRefreshing(true)
 
-      if (!response.ok) {
-        throw new Error('Unable to load teams.')
-      }
+    try {
+      const token = await getAccessToken()
+
+      const response = await fetch(`${API_URL}/teams`, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      })
 
       const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Unable to load your teams.')
+      }
+
       setTeams(Array.isArray(data) ? data : [])
     } catch (error) {
       console.error('Load teams error:', error)
       alert(error.message)
+    } finally {
+      setRefreshing(false)
     }
   }
 
@@ -200,11 +224,19 @@ function Team() {
       const data = await response.json()
 
       if (!response.ok) {
-        throw new Error(data.error || 'Unable to request team membership.')
+        throw new Error(
+          data.error || 'Unable to request team membership.'
+        )
       }
 
       setJoinCode('')
-      alert(data.message || 'Join request submitted.')
+
+      alert(
+        data.message ||
+          'Join request submitted. The team administrator may need to approve it.'
+      )
+
+      // Pending requests do not automatically add the team to My Teams.
       await loadTeams()
     } catch (error) {
       console.error('Join team error:', error)
@@ -290,8 +322,9 @@ function Team() {
             type="button"
             className="teams-refresh"
             onClick={loadTeams}
+            disabled={refreshing}
           >
-            ↻ Refresh
+            {refreshing ? 'Refreshing...' : '↻ Refresh'}
           </button>
         </header>
 
@@ -372,45 +405,49 @@ function Team() {
                 <div className="teams-user-list">
                   {profiles
                     .filter(profile => profile.user_id !== currentUser?.id)
-                    .map(profile => (
-                      <label
-                        className="teams-user-option"
-                        key={profile.user_id}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selectedMembers.some(
-                            item => item.user_id === profile.user_id
-                          )}
-                          onChange={() => toggleMember(profile)}
-                        />
+                    .map(profile => {
+                      const isSelected = selectedMembers.some(
+                        item => item.user_id === profile.user_id
+                      )
 
-                        <span className="teams-avatar">
-                          {(profile.name || profile.email || '?')
-                            .charAt(0)
-                            .toUpperCase()}
-                        </span>
+                      return (
+                        <label
+                          className="teams-user-option"
+                          key={profile.user_id}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleMember(profile)}
+                          />
 
-                        <span className="teams-user-info">
-                          <strong>{profile.name || 'User'}</strong>
-                          <small>{profile.email}</small>
-                        </span>
+                          <span className="teams-avatar">
+                            {(profile.name || profile.email || '?')
+                              .charAt(0)
+                              .toUpperCase()}
+                          </span>
 
-                        <span className="teams-select-label">
-                          {selectedMembers.some(
-                            item => item.user_id === profile.user_id
-                          ) ? 'Selected' : 'Add'}
-                        </span>
-                      </label>
-                    ))}
+                          <span className="teams-user-info">
+                            <strong>{profile.name || 'User'}</strong>
+                            <small>{profile.email}</small>
+                          </span>
+
+                          <span className="teams-select-label">
+                            {isSelected ? 'Selected' : 'Add'}
+                          </span>
+                        </label>
+                      )
+                    })}
                 </div>
               )}
 
-              {search && profiles.length === 0 && !searching && (
-                <p className="teams-empty-search">
-                  No users found yet. Select Search to look for registered users.
-                </p>
-              )}
+              {search.trim() &&
+                profiles.length === 0 &&
+                !searching && (
+                  <p className="teams-empty-search">
+                    No users found yet. Select Search to look for registered users.
+                  </p>
+                )}
 
               {selectedMembers.length > 0 && (
                 <p className="teams-selected-count">
@@ -460,7 +497,10 @@ function Team() {
                   setJoinCode(event.target.value.toUpperCase())
                 }
                 onKeyDown={event => {
-                  if (event.key === 'Enter') joinUsingCode()
+                  if (event.key === 'Enter') {
+                    event.preventDefault()
+                    joinUsingCode()
+                  }
                 }}
                 placeholder="Enter your team code"
                 maxLength={20}
@@ -559,11 +599,41 @@ function Team() {
                             </span>
 
                             <div className="teams-user-info">
-                              <strong>{member.name || 'Team member'}</strong>
+                              <div
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  flexWrap: 'wrap',
+                                  gap: 8
+                                }}
+                              >
+                                <strong>
+                                  {member.name || 'Team member'}
+                                </strong>
+
+                                {member.is_leader && (
+                                  <span
+                                    style={{
+                                      background: '#dbeafe',
+                                      color: '#1d4ed8',
+                                      padding: '4px 9px',
+                                      borderRadius: 20,
+                                      fontSize: 12,
+                                      fontWeight: 600
+                                    }}
+                                  >
+                                    Team Leader
+                                  </span>
+                                )}
+                              </div>
+
                               <small>{member.email}</small>
+
                               <small className="teams-member-role">
                                 {member.role || 'Member'}
-                                {member.status ? ` · ${member.status}` : ''}
+                                {member.status
+                                  ? ` · ${member.status}`
+                                  : ''}
                               </small>
                             </div>
                           </div>

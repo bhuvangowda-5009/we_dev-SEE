@@ -2,7 +2,14 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '../supabase'
 import '../css/dashboard.css'
-const API_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api`
+
+const API_ROOT = (
+  import.meta.env.VITE_API_URL || 'http://localhost:5000'
+).replace(/\/+$/, '')
+
+const API_URL = API_ROOT.endsWith('/api')
+  ? API_ROOT
+  : `${API_ROOT}/api`
 
 function Dashboard() {
   const [teams, setTeams] = useState([])
@@ -13,122 +20,145 @@ function Dashboard() {
   const [userName, setUserName] = useState('User')
   const [visibleTeamsCount, setVisibleTeamsCount] = useState(5)
 
-  // Load logged-in user's name
-  const loadUser = async () => {
-    const {
-      data: { user },
-      error,
-    } = await supabase.auth.getUser()
+  // Load the logged-in user's name
+  const loadUser = useCallback(async () => {
+    try {
+      const {
+        data: { user },
+        error,
+      } = await supabase.auth.getUser()
 
-    if (error) {
-      console.error('Error loading user:', error)
-      return
+      if (error) throw error
+
+      if (user) {
+        const name =
+          user.user_metadata?.name ||
+          user.user_metadata?.full_name ||
+          user.email?.split('@')[0] ||
+          'User'
+
+        setUserName(name)
+      }
+    } catch (error) {
+      console.error('Error loading user:', error.message)
     }
+  }, [])
 
-    if (user) {
-      const name =
-        user.user_metadata?.name ||
-        user.user_metadata?.full_name ||
-        user.email?.split('@')[0] ||
-        'User'
-
-      setUserName(name)
-    }
-  }
-
-  // Load message count and print detailed debugging information
+  // Load message count
   const loadMessageCount = useCallback(async () => {
     try {
-      const { data, error: readError } = await supabase
-        .from('messages')
-        .select('*')
-        .limit(5)
-
-      console.log(
-        'Messages table read test:',
-        JSON.stringify(
-          {
-            rowsReturned: data?.length,
-            sampleRows: data,
-            error: readError,
-          },
-          null,
-          2
-        )
-      )
-
-      const { count, error: countError } = await supabase
+      const {
+        count,
+        error,
+      } = await supabase
         .from('messages')
         .select('*', { count: 'exact', head: true })
 
-      console.log(
-        'Messages count test:',
-        JSON.stringify(
-          {
-            count,
-            error: countError,
-          },
-          null,
-          2
-        )
-      )
-
-      if (countError) {
-        console.error('Message count error:', countError)
+      if (error) {
+        console.error('Message count error:', error.message)
         return
       }
 
       setMessageCount(count ?? 0)
     } catch (error) {
-      console.error('Unexpected message count error:', error)
+      console.error('Unexpected message count error:', error.message)
     }
   }, [])
 
   // Load dashboard data
-  const loadDashboard = async () => {
+  const loadDashboard = useCallback(async () => {
     setLoading(true)
 
     try {
-      // Load teams
-    const teamsResponse = await fetch(`${API_URL}/teams`)
+      // Get the current logged-in user's session
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession()
+
+      if (sessionError) throw sessionError
+
+      if (!session?.access_token) {
+        throw new Error('No active session. Please log in again.')
+      }
+
+      // Send authentication token to the Node.js backend
+      const headers = {
+        Authorization: `Bearer ${session.access_token}`,
+      }
+
+      // Load the logged-in user's teams
+      const teamsResponse = await fetch(`${API_URL}/teams`, {
+        headers,
+      })
+
       if (!teamsResponse.ok) {
-        throw new Error('Failed to load teams')
+        throw new Error(
+          `Failed to load teams: HTTP ${teamsResponse.status}`
+        )
       }
 
       const teamsData = await teamsResponse.json()
+
+      if (!Array.isArray(teamsData)) {
+        throw new Error('Teams API did not return an array.')
+      }
+
       setTeams(teamsData)
 
       // Load tasks
-const tasksResponse = await fetch(`${API_URL}/tasks`)
+      const tasksResponse = await fetch(`${API_URL}/tasks`, {
+        headers,
+      })
 
       if (!tasksResponse.ok) {
-        throw new Error('Failed to load tasks')
+        throw new Error(
+          `Failed to load tasks: HTTP ${tasksResponse.status}`
+        )
       }
 
       const tasksData = await tasksResponse.json()
+
+      if (!Array.isArray(tasksData)) {
+        throw new Error('Tasks API did not return an array.')
+      }
+
       setTasks(tasksData)
 
-      // Load messages count
-      await loadMessageCount()
+      // Load message count
+     const messagesResponse = await fetch(
+  `${API_URL}/messages/count`,
+  { headers }
+)
+
+if (!messagesResponse.ok) {
+  throw new Error(
+    `Failed to load message count: HTTP ${messagesResponse.status}`
+  )
+}
+
+const messagesData = await messagesResponse.json()
+setMessageCount(messagesData.count ?? 0)
 
       // Load files count
-      const { data: files, error: fileError } = await supabase.storage
-        .from('files')
-        .list('', { limit: 1000 })
+      const { data: files, error: fileError } =
+        await supabase.storage
+          .from('files')
+          .list('', { limit: 1000 })
 
       if (fileError) {
-        console.error('Error loading files:', fileError)
+        console.error('Error loading files:', fileError.message)
       } else {
         setFileCount(files?.length ?? 0)
       }
     } catch (error) {
-      console.error('Error loading dashboard:', error)
+      console.error('Error loading dashboard:', error.message)
     } finally {
       setLoading(false)
     }
-  }
+  }, [loadMessageCount])
 
-  // Initial load and real-time message updates
+  // Initial dashboard load and real-time message updates
   useEffect(() => {
     loadUser()
     loadDashboard()
@@ -144,9 +174,7 @@ const tasksResponse = await fetch(`${API_URL}/tasks`)
           schema: 'public',
           table: 'messages',
         },
-        async (payload) => {
-          console.log('Message database change received:', payload)
-
+        async () => {
           if (isMounted) {
             await loadMessageCount()
           }
@@ -164,7 +192,7 @@ const tasksResponse = await fetch(`${API_URL}/tasks`)
       isMounted = false
       supabase.removeChannel(channel)
     }
-  }, [loadMessageCount])
+  }, [loadUser, loadDashboard, loadMessageCount])
 
   // Count active tasks
   const activeTasks = tasks.filter(
@@ -175,7 +203,17 @@ const tasksResponse = await fetch(`${API_URL}/tasks`)
 
   // Show the 5 latest tasks first
   const recentTasks = [...tasks]
-    .sort((a, b) => Number(b.id) - Number(a.id))
+    .sort((a, b) => {
+      const dateA = a.created_at
+        ? new Date(a.created_at).getTime()
+        : Number(a.id) || 0
+
+      const dateB = b.created_at
+        ? new Date(b.created_at).getTime()
+        : Number(b.id) || 0
+
+      return dateB - dateA
+    })
     .slice(0, 5)
 
   const getStatusClass = status => {
@@ -288,7 +326,10 @@ const tasksResponse = await fetch(`${API_URL}/tasks`)
                     className="show-more-teams"
                     onClick={() =>
                       setVisibleTeamsCount(previousCount =>
-                        Math.min(previousCount + 5, teams.length)
+                        Math.min(
+                          previousCount + 5,
+                          teams.length
+                        )
                       )
                     }
                   >
@@ -307,8 +348,11 @@ const tasksResponse = await fetch(`${API_URL}/tasks`)
                 )}
 
                 <p>
-                  Showing {Math.min(visibleTeamsCount, teams.length)} of{' '}
-                  {teams.length} teams
+                  Showing {Math.min(
+                    visibleTeamsCount,
+                    teams.length
+                  )}{' '}
+                  of {teams.length} teams
                 </p>
               </div>
             </>
@@ -340,7 +384,9 @@ const tasksResponse = await fetch(`${API_URL}/tasks`)
                   <p>Team task</p>
                 </div>
 
-                <span className={`status ${getStatusClass(task.status)}`}>
+                <span
+                  className={`status ${getStatusClass(task.status)}`}
+                >
                   {getStatusText(task.status)}
                 </span>
               </div>

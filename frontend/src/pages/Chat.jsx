@@ -3,7 +3,14 @@ import { useEffect, useState } from 'react'
 import Sidebar from '../components/Sidebar'
 import { supabase } from '../supabase'
 import '../css/dashboard.css'
-const API_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api`
+
+const API_ROOT = (
+  import.meta.env.VITE_API_URL || 'http://localhost:5000'
+).replace(/\/+$/, '')
+
+const API_URL = API_ROOT.endsWith('/api')
+  ? API_ROOT
+  : `${API_ROOT}/api`
 
 function Chat() {
   const [profile, setProfile] = useState(null)
@@ -18,13 +25,32 @@ function Chat() {
     loadProfileAndTeams()
   }, [])
 
+  // Get a valid access token for backend requests
+  async function getAuthHeaders(json = false) {
+    const {
+      data: { session },
+      error,
+    } = await supabase.auth.getSession()
+
+    if (error) throw error
+
+    if (!session?.access_token) {
+      throw new Error('Your session has expired. Please log in again.')
+    }
+
+    return {
+      ...(json ? { 'Content-Type': 'application/json' } : {}),
+      Authorization: `Bearer ${session.access_token}`,
+    }
+  }
+
   async function loadProfileAndTeams() {
     try {
       setLoading(true)
 
       const {
         data: { user },
-        error: userError
+        error: userError,
       } = await supabase.auth.getUser()
 
       if (userError || !user?.email) {
@@ -33,14 +59,12 @@ function Chat() {
 
       const email = user.email.trim().toLowerCase()
 
-      console.log('Logged-in email:', email)
-
-      // Load the user's profile.
-      const { data: profileData, error: profileError } = await supabase
-        .from('profiles')
-        .select('id, name, email, role, user_id')
-        .eq('user_id', user.id)
-        .maybeSingle()
+      const { data: profileData, error: profileError } =
+        await supabase
+          .from('profiles')
+          .select('id, name, email, role, user_id')
+          .eq('user_id', user.id)
+          .maybeSingle()
 
       if (profileError) {
         throw new Error(
@@ -56,32 +80,35 @@ function Chat() {
           user.user_metadata?.name ||
           email.split('@')[0],
         email,
-        role: profileData?.role || user.user_metadata?.role || 'member'
+        role:
+          profileData?.role ||
+          user.user_metadata?.role ||
+          'member',
       }
 
       setProfile(currentProfile)
 
-      // Load approved memberships.
-      const { data: memberships, error: membershipError } = await supabase
-        .from('team_members')
-        .select('team_id, email, status')
-        .ilike('email', email)
-        .ilike('status', 'approved')
+      // Load approved memberships
+      const { data: memberships, error: membershipError } =
+        await supabase
+          .from('team_members')
+          .select('team_id, email, status')
+          .ilike('email', email)
+          .ilike('status', 'approved')
 
       if (membershipError) {
         throw new Error(
-          'Unable to load memberships: ' + membershipError.message
+          'Unable to load memberships: ' +
+            membershipError.message
         )
       }
-
-      console.log('Approved memberships:', memberships)
 
       const teamIds = [
         ...new Set(
           (memberships || [])
             .map(member => member.team_id)
             .filter(id => id !== null && id !== undefined)
-        )
+        ),
       ]
 
       if (teamIds.length === 0) {
@@ -91,12 +118,13 @@ function Chat() {
         return
       }
 
-      // Load the teams the user belongs to.
-      const { data: teamData, error: teamsError } = await supabase
-        .from('teams')
-        .select('*')
-        .in('id', teamIds)
-        .order('id', { ascending: true })
+      // Load only teams with approved memberships
+      const { data: teamData, error: teamsError } =
+        await supabase
+          .from('teams')
+          .select('*')
+          .in('id', teamIds)
+          .order('id', { ascending: true })
 
       if (teamsError) {
         throw new Error(
@@ -105,8 +133,6 @@ function Chat() {
       }
 
       const availableTeams = teamData || []
-
-      console.log('Available teams:', availableTeams)
 
       setTeams(availableTeams)
 
@@ -128,43 +154,48 @@ function Chat() {
     }
   }
 
+  // Load messages with authentication
   async function loadMessages(teamId, emailOverride) {
     if (!teamId) return
 
     try {
-      let email = emailOverride
+      const {
+        data: { user },
+        error,
+      } = await supabase.auth.getUser()
 
-      if (!email) {
-        const {
-          data: { user },
-          error
-        } = await supabase.auth.getUser()
-
-        if (error || !user?.email) {
-          throw new Error('Please log in to view messages.')
-        }
-
-        email = user.email.trim().toLowerCase()
+      if (error || !user?.email) {
+        throw new Error('Please log in to view messages.')
       }
+
+      const email = (
+        emailOverride || user.email
+      ).trim().toLowerCase()
 
       const params = new URLSearchParams({
         team_id: String(teamId),
-        email
+        email,
       })
 
+      const headers = await getAuthHeaders()
+
       const response = await fetch(
-        `${API_URL}/messages?${params.toString()}`
+        `${API_URL}/messages?${params.toString()}`,
+        { headers }
       )
 
-      const data = await response.json()
+      const data = await response.json().catch(() => ({}))
 
       if (!response.ok) {
-        throw new Error(data.error || 'Unable to load messages.')
+        throw new Error(
+          data.error ||
+            `Unable to load messages (HTTP ${response.status}).`
+        )
       }
 
       setMessages(Array.isArray(data) ? data : [])
     } catch (error) {
-      console.error('Error loading messages:', error)
+      console.error('Error loading messages:', error.message)
       setMessages([])
     }
   }
@@ -184,6 +215,7 @@ function Chat() {
     await loadMessages(team.id, profile?.email)
   }
 
+  // Send messages with authentication
   async function sendMessage(event) {
     event.preventDefault()
 
@@ -196,33 +228,36 @@ function Chat() {
     try {
       setSending(true)
 
+      const headers = await getAuthHeaders(true)
+
       const response = await fetch(`${API_URL}/messages`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers,
         body: JSON.stringify({
           sender: profile.name || profile.email,
           message: trimmedMessage,
           team_id: selectedTeam.id,
-          email: profile.email
-        })
+          email: profile.email,
+        }),
       })
 
-      const data = await response.json()
+      const data = await response.json().catch(() => ({}))
 
       if (!response.ok) {
-        throw new Error(data.error || 'Unable to send message.')
+        throw new Error(
+          data.error ||
+            `Unable to send message (HTTP ${response.status}).`
+        )
       }
 
       setMessages(previousMessages => [
         ...previousMessages,
-        data
+        data,
       ])
 
       setMessage('')
     } catch (error) {
-      console.error('Error sending message:', error)
+      console.error('Error sending message:', error.message)
       alert('Unable to send message: ' + error.message)
     } finally {
       setSending(false)
@@ -254,18 +289,13 @@ function Chat() {
             <p>Loading teams...</p>
           ) : teams.length === 0 ? (
             <div>
-              <p>
-                No approved team memberships were found for:
-              </p>
-
+              <p>No approved team memberships were found for:</p>
               <strong>{profile?.email || 'your account'}</strong>
-
               <p>
-                Check that this email matches the email in
-                the team_members table and that the membership
+                Check that your email matches the email in
+                the team_members table and that your membership
                 status is approved.
               </p>
-
               <button
                 type="button"
                 onClick={loadProfileAndTeams}
@@ -295,7 +325,7 @@ function Chat() {
                 justifyContent: 'space-between',
                 alignItems: 'center',
                 gap: '12px',
-                marginBottom: '15px'
+                marginBottom: '15px',
               }}
             >
               <h2 style={{ margin: 0 }}>
@@ -322,7 +352,7 @@ function Chat() {
                 display: 'flex',
                 flexDirection: 'column',
                 gap: '10px',
-                boxSizing: 'border-box'
+                boxSizing: 'border-box',
               }}
             >
               {messages.length === 0 ? (
@@ -335,7 +365,7 @@ function Chat() {
                       padding: '10px 12px',
                       borderRadius: '8px',
                       background: '#f0f0f0',
-                      flexShrink: 0
+                      flexShrink: 0,
                     }}
                   >
                     <strong>{item.sender}</strong>
@@ -344,7 +374,7 @@ function Chat() {
                       style={{
                         margin: '5px 0 0',
                         wordBreak: 'break-word',
-                        whiteSpace: 'pre-wrap'
+                        whiteSpace: 'pre-wrap',
                       }}
                     >
                       {item.message}
@@ -359,7 +389,7 @@ function Chat() {
               style={{
                 display: 'flex',
                 gap: '10px',
-                width: '100%'
+                width: '100%',
               }}
             >
               <input
@@ -369,7 +399,7 @@ function Chat() {
                 onChange={event => setMessage(event.target.value)}
                 style={{
                   flex: 1,
-                  minWidth: 0
+                  minWidth: 0,
                 }}
                 disabled={sending}
               />
