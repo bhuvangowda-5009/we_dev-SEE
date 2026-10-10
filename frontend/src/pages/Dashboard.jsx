@@ -2,6 +2,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '../supabase'
 import '../css/dashboard.css'
+const API_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api`
 
 function Dashboard() {
   const [teams, setTeams] = useState([])
@@ -89,10 +90,7 @@ function Dashboard() {
 
     try {
       // Load teams
-      const teamsResponse = await fetch(
-        'http://localhost:5000/api/teams'
-      )
-
+    const teamsResponse = await fetch(`${API_URL}/teams`)
       if (!teamsResponse.ok) {
         throw new Error('Failed to load teams')
       }
@@ -101,9 +99,7 @@ function Dashboard() {
       setTeams(teamsData)
 
       // Load tasks
-      const tasksResponse = await fetch(
-        'http://localhost:5000/api/tasks'
-      )
+const tasksResponse = await fetch(`${API_URL}/tasks`)
 
       if (!tasksResponse.ok) {
         throw new Error('Failed to load tasks')

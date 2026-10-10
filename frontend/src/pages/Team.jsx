@@ -5,7 +5,7 @@ import { supabase } from '../supabase'
 import '../css/dashboard.css'
 import '../css/teams.css'
 
-const API_URL = 'http://localhost:5000/api'
+const API_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api`
 
 function Team() {
   const [teams, setTeams] = useState([])
