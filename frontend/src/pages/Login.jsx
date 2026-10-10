@@ -26,7 +26,7 @@ function Login() {
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
         email: cleanEmail,
-        password
+        password: password
       })
 
       if (error) {
@@ -52,25 +52,31 @@ function Login() {
         <h1>TeamHub</h1>
         <p>Team Collaboration Platform</p>
 
-        <form onSubmit={handleSubmit} autoComplete="off">
-          <label>Email</label>
+        <form onSubmit={handleSubmit} autoComplete="on">
+          <label htmlFor="login-email">Email</label>
+
           <input
+            id="login-email"
             type="email"
-            name="teamhub-login-email"
+            name="email"
             placeholder="Enter your email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            autoComplete="off"
+            autoComplete="username"
+            required
           />
 
-          <label>Password</label>
+          <label htmlFor="login-password">Password</label>
+
           <input
+            id="login-password"
             type="password"
-            name="teamhub-login-password"
+            name="password"
             placeholder="Enter your password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            autoComplete="new-password"
+            autoComplete="current-password"
+            required
           />
 
           <button type="submit" disabled={loading}>
