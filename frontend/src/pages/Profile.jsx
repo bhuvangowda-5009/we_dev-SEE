@@ -1,3 +1,4 @@
+
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../supabase'
@@ -15,110 +16,166 @@ function Profile() {
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState('')
   const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     loadProfile()
   }, [])
 
-  const loadProfile = async () => {
-    const {
-      data: { user }
-    } = await supabase.auth.getUser()
+  async function loadProfile() {
+    try {
+      const {
+        data: { user },
+        error: userError
+      } = await supabase.auth.getUser()
 
-    if (!user) {
-      navigate('/login')
-      return
-    }
+      if (userError || !user) {
+        navigate('/login')
+        return
+      }
 
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('name, email')
-      .eq('email', user.email)
-      .maybeSingle()
+      // Find the profile belonging to this authenticated user.
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, name, email, role, user_id')
+        .eq('user_id', user.id)
+        .maybeSingle()
 
-    if (error) {
-      console.log('Error loading profile:', error)
+      if (error) {
+        console.error('Profile lookup error:', error)
+        throw error
+      }
+
+      const currentName =
+        data?.name ||
+        user.user_metadata?.name ||
+        user.email.split('@')[0]
 
       setProfile({
-        name: user.user_metadata?.name || 'Bhuvan',
+        name: currentName,
         email: user.email
       })
 
-      setName(user.user_metadata?.name || 'Bhuvan')
+      setName(currentName)
+    } catch (error) {
+      console.error('Unable to load profile:', error)
+      alert('Unable to load your profile: ' + error.message)
+    } finally {
       setLoading(false)
+    }
+  }
 
+  async function handleSave() {
+    const trimmedName = name.trim()
+
+    if (!trimmedName) {
+      alert('Please enter your name.')
       return
     }
 
-    if (!data) {
+    try {
+      setSaving(true)
+
+      const {
+        data: { user },
+        error: userError
+      } = await supabase.auth.getUser()
+
+      if (userError || !user) {
+        navigate('/login')
+        return
+      }
+
+      // Update the display name in Supabase Auth.
+      const { error: authError } = await supabase.auth.updateUser({
+        data: {
+          ...user.user_metadata,
+          name: trimmedName
+        }
+      })
+
+      if (authError) {
+        throw new Error(
+          'Unable to update account name: ' + authError.message
+        )
+      }
+
+      // Check whether this user already has a profile row.
+      const { data: existingProfile, error: lookupError } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('user_id', user.id)
+        .maybeSingle()
+
+      if (lookupError) {
+        throw new Error(
+          'Unable to check profile record: ' + lookupError.message
+        )
+      }
+
+      if (existingProfile) {
+        // Update the existing profile.
+        const { error: updateError } = await supabase
+          .from('profiles')
+          .update({ name: trimmedName })
+          .eq('user_id', user.id)
+
+        if (updateError) {
+          throw new Error(
+            'Account name updated, but profile update failed: ' +
+            updateError.message
+          )
+        }
+      } else {
+        // Create a profile only for the currently authenticated user.
+        const { error: insertError } = await supabase
+          .from('profiles')
+          .insert({
+            user_id: user.id,
+            name: trimmedName,
+            email: user.email,
+            role: user.user_metadata?.role || 'member'
+          })
+
+        if (insertError) {
+          throw new Error(
+            'Account name updated, but the profile could not be created. ' +
+            'Supabase may be blocking the insert through Row Level Security (RLS). ' +
+            insertError.message
+          )
+        }
+      }
+
       setProfile({
-        name: user.user_metadata?.name || 'Bhuvan',
+        name: trimmedName,
         email: user.email
       })
 
-      setName(user.user_metadata?.name || 'Bhuvan')
-      setLoading(false)
-
-      return
+      setEditing(false)
+      alert('Profile updated successfully!')
+    } catch (error) {
+      console.error('Save profile error:', error)
+      alert(error.message || 'Unable to save your profile.')
+    } finally {
+      setSaving(false)
     }
-
-    setProfile({
-      name: data.name,
-      email: data.email || user.email
-    })
-
-    setName(data.name)
-    setLoading(false)
   }
 
-  const handleSave = async () => {
-    const {
-      data: { user }
-    } = await supabase.auth.getUser()
-
-    if (!user) {
-      navigate('/login')
-      return
-    }
-
-    const { data, error } = await supabase
-      .from('profiles')
-      .update({
-        name: name
-      })
-      .eq('email', user.email)
-      .select()
+  async function handleLogout() {
+    const { error } = await supabase.auth.signOut()
 
     if (error) {
-      alert(error.message)
+      alert('Unable to log out: ' + error.message)
       return
     }
 
-    if (!data || data.length === 0) {
-      alert('Profile record not found')
-      return
-    }
-
-    setProfile({
-      ...profile,
-      name: name
-    })
-
-    setEditing(false)
-
-    alert('Profile updated successfully')
-  }
-
-  const handleLogout = async () => {
-    await supabase.auth.signOut()
-    navigate('/login')
+    navigate('/login', { replace: true })
   }
 
   if (loading) {
     return (
       <div className="dashboard">
         <Sidebar />
-
         <main className="dashboard-content">
           <h1>Loading profile...</h1>
         </main>
@@ -128,106 +185,88 @@ function Profile() {
 
   return (
     <div className="dashboard">
-
       <Sidebar />
 
       <main className="dashboard-content">
-
         <header className="dashboard-header">
-
           <div>
             <h1>My Profile</h1>
-
-            <p>
-              Manage your account information.
-            </p>
+            <p>Manage your account information.</p>
           </div>
-
         </header>
 
         <section className="dashboard-card">
-
           <div className="card-title">
             <h2>Profile Information</h2>
           </div>
 
           <div style={{ marginTop: '20px' }}>
-
             <h3>Name</h3>
 
             {editing ? (
-
               <input
                 type="text"
                 value={name}
-                onChange={(e) =>
-                  setName(e.target.value)
-                }
+                onChange={event => setName(event.target.value)}
+                placeholder="Enter your name"
+                maxLength={100}
+                disabled={saving}
               />
-
             ) : (
-
               <p>{profile.name}</p>
-
             )}
-
           </div>
 
           <div style={{ marginTop: '20px' }}>
-
             <h3>Email</h3>
-
             <p>{profile.email}</p>
-
           </div>
 
           <div style={{ marginTop: '25px' }}>
-
             {editing ? (
-
               <>
                 <button
+                  type="button"
                   onClick={handleSave}
                   className="create-button"
+                  disabled={saving}
                 >
-                  Save Changes
+                  {saving ? 'Saving...' : 'Save Changes'}
                 </button>
 
                 <button
+                  type="button"
                   onClick={() => {
                     setName(profile.name)
                     setEditing(false)
                   }}
                   style={{ marginLeft: '10px' }}
+                  disabled={saving}
                 >
                   Cancel
                 </button>
               </>
-
             ) : (
-
               <button
+                type="button"
                 onClick={() => setEditing(true)}
                 className="create-button"
               >
                 Edit Profile
               </button>
-
             )}
 
             <button
+              type="button"
               onClick={handleLogout}
               style={{ marginLeft: '10px' }}
+              disabled={saving}
             >
               Logout
             </button>
-
           </div>
-
         </section>
-
       </main>
-
     </div>
   )
 }

@@ -1,16 +1,27 @@
+/* =====================================
+   TEAMHUB - SIDEBAR
+===================================== */
+
 .sidebar {
   width: 240px;
-  min-height: 100vh;
+  min-width: 240px;
+  height: 100vh;
+  box-sizing: border-box;
+  position: fixed;
+  top: 0;
+  left: 0;
   background: #111827;
   color: white;
   padding: 25px 15px;
   display: flex;
   flex-direction: column;
+  z-index: 1000;
+  overflow-y: auto;
 }
 
 .sidebar h2 {
   font-size: 24px;
-  margin-bottom: 35px;
+  margin: 0 0 35px;
   padding-left: 10px;
 }
 
@@ -25,6 +36,7 @@
   text-decoration: none;
   padding: 13px;
   border-radius: 8px;
+  transition: background 0.2s, color 0.2s;
 }
 
 .sidebar nav a:hover {
@@ -39,11 +51,13 @@
   display: flex;
   align-items: center;
   gap: 10px;
+  overflow-wrap: anywhere;
 }
 
 .avatar {
   width: 38px;
   height: 38px;
+  min-width: 38px;
   background: #6366f1;
   border-radius: 50%;
   display: flex;
@@ -56,4 +70,97 @@
   display: block;
   color: #9ca3af;
   margin-top: 3px;
+}
+
+/* =====================================
+   SHARED CONTENT LAYOUT
+===================================== */
+
+.main-content {
+  margin-left: 240px;
+  width: calc(100% - 240px);
+  min-width: 0;
+  min-height: 100vh;
+  box-sizing: border-box;
+}
+
+/* =====================================
+   RESPONSIVE LAYOUT
+===================================== */
+
+@media (max-width: 768px) {
+  .sidebar {
+    width: 200px;
+    min-width: 200px;
+    padding: 20px 10px;
+  }
+
+  .main-content {
+    margin-left: 200px;
+    width: calc(100% - 200px);
+  }
+}
+/* Prevent routed page content from overflowing under the sidebar */
+
+.main-content {
+  margin-left: 240px;
+  width: calc(100% - 240px);
+  max-width: calc(100% - 240px);
+  min-width: 0;
+  box-sizing: border-box;
+  overflow-x: clip;
+}
+
+.main-content > * {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.main-content img,
+.main-content table,
+.main-content pre {
+  max-width: 100%;
+}
+
+@media (max-width: 768px) {
+  .main-content {
+    margin-left: 200px;
+    width: calc(100% - 200px);
+    max-width: calc(100% - 200px);
+  }
+}/* Fix content sizing for all navigation pages */
+
+.main-content {
+  margin-left: 240px;
+  width: calc(100% - 240px);
+  min-width: 0;
+  box-sizing: border-box;
+  position: relative;
+}
+
+/* Prevent page sections from exceeding available width */
+.main-content > * {
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+/* Responsive grids and wide content */
+.main-content img,
+.main-content video,
+.main-content iframe {
+  max-width: 100%;
+}
+
+.main-content table {
+  width: 100%;
+  table-layout: auto;
+}
+
+@media (max-width: 768px) {
+  .main-content {
+    margin-left: 200px;
+    width: calc(100% - 200px);
+  }
 }

@@ -14,7 +14,9 @@ function Login() {
   const handleSubmit = async (e) => {
     e.preventDefault()
 
-    if (!email.trim() || !password) {
+    const cleanEmail = email.trim().toLowerCase()
+
+    if (!cleanEmail || !password) {
       alert('Please enter email and password')
       return
     }
@@ -22,107 +24,64 @@ function Login() {
     setLoading(true)
 
     try {
-      const { data, error } =
-        await supabase.auth.signInWithPassword({
-          email: email.trim(),
-          password: password
-        })
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: cleanEmail,
+        password
+      })
 
       if (error) {
-        console.log('Login error:', error.message)
-
-        alert(
-          'Login failed: ' +
-          error.message
-        )
-
-        setLoading(false)
+        console.error('Login error:', error.message)
+        alert('Login failed: ' + error.message)
         return
       }
 
-      console.log(
-        'Login successful:',
-        data.user.email
-      )
-
-      setLoading(false)
+      console.log('Login successful:', data.user.email)
 
       navigate('/dashboard')
-
     } catch (error) {
-      console.log(
-        'Unexpected login error:',
-        error
-      )
-
-      alert(
-        'Something went wrong. Please try again.'
-      )
-
+      console.error('Unexpected login error:', error)
+      alert('Something went wrong. Please try again.')
+    } finally {
       setLoading(false)
     }
   }
 
   return (
     <div className="login-page">
-
       <div className="login-box">
+        <h1>TeamHub</h1>
+        <p>Team Collaboration Platform</p>
 
-        <h1>
-          TeamHub
-        </h1>
-
-        <p>
-          Team Collaboration Platform
-        </p>
-
-        <form onSubmit={handleSubmit}>
-
-          <label>
-            Email
-          </label>
-
+        <form onSubmit={handleSubmit} autoComplete="off">
+          <label>Email</label>
           <input
             type="email"
+            name="teamhub-login-email"
             placeholder="Enter your email"
             value={email}
-            onChange={(e) =>
-              setEmail(e.target.value)
-            }
+            onChange={(e) => setEmail(e.target.value)}
+            autoComplete="off"
           />
 
-          <label>
-            Password
-          </label>
-
+          <label>Password</label>
           <input
             type="password"
+            name="teamhub-login-password"
             placeholder="Enter your password"
             value={password}
-            onChange={(e) =>
-              setPassword(e.target.value)
-            }
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete="new-password"
           />
 
-          <button
-            type="submit"
-            disabled={loading}
-          >
-            {loading
-              ? 'Logging in...'
-              : 'Login'}
+          <button type="submit" disabled={loading}>
+            {loading ? 'Logging in...' : 'Login'}
           </button>
-
         </form>
 
         <p className="signup-text">
-
           Don't have an account?{' '}
-
           <span
-            onClick={() =>
-              navigate('/signup')
-            }
+            onClick={() => navigate('/signup')}
             style={{
               cursor: 'pointer',
               textDecoration: 'underline'
@@ -130,11 +89,8 @@ function Login() {
           >
             Sign up
           </span>
-
         </p>
-
       </div>
-
     </div>
   )
 }

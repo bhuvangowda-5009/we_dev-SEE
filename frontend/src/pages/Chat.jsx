@@ -4,6 +4,8 @@ import Sidebar from '../components/Sidebar'
 import { supabase } from '../supabase'
 import '../css/dashboard.css'
 
+const API_URL = 'http://localhost:5000/api'
+
 function Chat() {
   const [profile, setProfile] = useState(null)
   const [teams, setTeams] = useState([])
@@ -17,294 +19,286 @@ function Chat() {
     loadProfileAndTeams()
   }, [])
 
-  const loadProfileAndTeams = async () => {
+  async function loadProfileAndTeams() {
     try {
       setLoading(true)
 
-      // Get logged-in user
       const {
         data: { user },
         error: userError
       } = await supabase.auth.getUser()
 
-      if (userError || !user) {
-        console.log('User not found:', userError)
-        setLoading(false)
-        return
+      if (userError || !user?.email) {
+        throw new Error('Please log in to access team chat.')
       }
 
-      // Get profile of logged-in user
-      const { data: profileData, error: profileError } =
-        await supabase
-          .from('profiles')
-          .select('*')
-          .eq('email', user.email)
-          .single()
+      const email = user.email.trim().toLowerCase()
+
+      console.log('Logged-in email:', email)
+
+      // Load the user's profile.
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('id, name, email, role, user_id')
+        .eq('user_id', user.id)
+        .maybeSingle()
 
       if (profileError) {
-        console.log('Profile error:', profileError)
-        setLoading(false)
+        throw new Error(
+          'Unable to load profile: ' + profileError.message
+        )
+      }
+
+      const currentProfile = {
+        id: profileData?.id ?? null,
+        user_id: user.id,
+        name:
+          profileData?.name ||
+          user.user_metadata?.name ||
+          email.split('@')[0],
+        email,
+        role: profileData?.role || user.user_metadata?.role || 'member'
+      }
+
+      setProfile(currentProfile)
+
+      // Load approved memberships.
+      const { data: memberships, error: membershipError } = await supabase
+        .from('team_members')
+        .select('team_id, email, status')
+        .ilike('email', email)
+        .ilike('status', 'approved')
+
+      if (membershipError) {
+        throw new Error(
+          'Unable to load memberships: ' + membershipError.message
+        )
+      }
+
+      console.log('Approved memberships:', memberships)
+
+      const teamIds = [
+        ...new Set(
+          (memberships || [])
+            .map(member => member.team_id)
+            .filter(id => id !== null && id !== undefined)
+        )
+      ]
+
+      if (teamIds.length === 0) {
+        setTeams([])
+        setSelectedTeam(null)
+        setMessages([])
         return
       }
 
-      setProfile(profileData)
+      // Load the teams the user belongs to.
+      const { data: teamData, error: teamsError } = await supabase
+        .from('teams')
+        .select('*')
+        .in('id', teamIds)
+        .order('id', { ascending: true })
 
-      // Get teams of logged-in user
-      const {
-        data: teamMembers,
-        error: teamMemberError
-      } = await supabase
-        .from('team_members')
-        .select('team_id')
-        .eq('email', user.email)
-
-      if (teamMemberError) {
-        console.log(
-          'Error loading team memberships:',
-          teamMemberError
+      if (teamsError) {
+        throw new Error(
+          'Unable to load teams: ' + teamsError.message
         )
       }
 
-      let teamData = []
+      const availableTeams = teamData || []
 
-      if (teamMembers && teamMembers.length > 0) {
-        const teamIds = teamMembers.map(
-          (member) => member.team_id
-        )
+      console.log('Available teams:', availableTeams)
 
-        const { data, error } = await supabase
-          .from('teams')
-          .select('*')
-          .in('id', teamIds)
-          .order('id', {
-            ascending: true
-          })
+      setTeams(availableTeams)
 
-        if (error) {
-          console.log(
-            'Error loading teams:',
-            error
-          )
-        } else {
-          teamData = data || []
-        }
+      if (availableTeams.length > 0) {
+        setSelectedTeam(availableTeams[0])
+        await loadMessages(availableTeams[0].id, email)
+      } else {
+        setSelectedTeam(null)
+        setMessages([])
       }
-
-      // If no team membership found,
-      // show all teams
-      if (teamData.length === 0) {
-        const { data, error } = await supabase
-          .from('teams')
-          .select('*')
-          .order('id', {
-            ascending: true
-          })
-
-        if (error) {
-          console.log(
-            'Error loading all teams:',
-            error
-          )
-        } else {
-          teamData = data || []
-        }
-      }
-
-      setTeams(teamData)
-
-      if (teamData.length > 0) {
-        setSelectedTeam(teamData[0])
-        await loadMessages(teamData[0].id)
-      }
-
     } catch (error) {
-      console.log(
-        'Unexpected error:',
-        error
-      )
+      console.error('Error loading profile and teams:', error)
+      alert(error.message || 'Unable to load your teams.')
+      setTeams([])
+      setSelectedTeam(null)
+      setMessages([])
     } finally {
       setLoading(false)
     }
   }
 
-  const loadMessages = async (teamId) => {
-    if (!teamId) {
-      return
-    }
+  async function loadMessages(teamId, emailOverride) {
+    if (!teamId) return
 
     try {
+      let email = emailOverride
+
+      if (!email) {
+        const {
+          data: { user },
+          error
+        } = await supabase.auth.getUser()
+
+        if (error || !user?.email) {
+          throw new Error('Please log in to view messages.')
+        }
+
+        email = user.email.trim().toLowerCase()
+      }
+
+      const params = new URLSearchParams({
+        team_id: String(teamId),
+        email
+      })
+
       const response = await fetch(
-        `http://localhost:5000/api/messages?team_id=${teamId}`
+        `${API_URL}/messages?${params.toString()}`
       )
 
       const data = await response.json()
 
       if (!response.ok) {
-        throw new Error(
-          data.error || 'Unable to load messages'
-        )
+        throw new Error(data.error || 'Unable to load messages.')
       }
 
-      setMessages(data)
-
+      setMessages(Array.isArray(data) ? data : [])
     } catch (error) {
-      console.log(
-        'Error loading messages:',
-        error
-      )
+      console.error('Error loading messages:', error)
+      setMessages([])
     }
   }
 
-  const handleTeamChange = async (e) => {
-    const teamId = Number(e.target.value)
+  async function handleTeamChange(event) {
+    const teamId = Number(event.target.value)
 
     const team = teams.find(
-      (item) => item.id === teamId
+      item => Number(item.id) === teamId
     )
 
-    if (!team) {
-      return
-    }
+    if (!team) return
 
     setSelectedTeam(team)
+    setMessages([])
 
-    await loadMessages(team.id)
+    await loadMessages(team.id, profile?.email)
   }
 
-  const sendMessage = async (e) => {
-    e.preventDefault()
+  async function sendMessage(event) {
+    event.preventDefault()
 
-    if (
-      !message.trim() ||
-      !selectedTeam ||
-      !profile
-    ) {
+    const trimmedMessage = message.trim()
+
+    if (!trimmedMessage || !selectedTeam || !profile?.email) {
       return
     }
 
     try {
       setSending(true)
 
-      const response = await fetch(
-        'http://localhost:5000/api/messages',
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            sender: profile.name,
-            message: message.trim(),
-            team_id: selectedTeam.id,
-            email: profile.email
-          })
-        }
-      )
+      const response = await fetch(`${API_URL}/messages`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          sender: profile.name || profile.email,
+          message: trimmedMessage,
+          team_id: selectedTeam.id,
+          email: profile.email
+        })
+      })
 
       const data = await response.json()
 
       if (!response.ok) {
-        throw new Error(
-          data.error || 'Unable to send message'
-        )
+        throw new Error(data.error || 'Unable to send message.')
       }
 
-      setMessages((previousMessages) => [
+      setMessages(previousMessages => [
         ...previousMessages,
         data
       ])
 
       setMessage('')
-
     } catch (error) {
-      console.log(
-        'Error sending message:',
-        error
-      )
-
-      alert(
-        'Unable to send message: ' +
-        error.message
-      )
+      console.error('Error sending message:', error)
+      alert('Unable to send message: ' + error.message)
     } finally {
       setSending(false)
     }
   }
 
-  const refreshMessages = async () => {
-    if (selectedTeam) {
-      await loadMessages(selectedTeam.id)
+  async function refreshMessages() {
+    if (selectedTeam && profile?.email) {
+      await loadMessages(selectedTeam.id, profile.email)
     }
   }
 
   return (
     <div className="dashboard-layout">
-
       <Sidebar />
 
       <main className="dashboard-content">
-
         <div className="dashboard-header">
-
           <div>
             <h1>Messages</h1>
-
-            <p>
-              Communicate with your team.
-            </p>
+            <p>Communicate with your team.</p>
           </div>
-
         </div>
 
-        {/* SELECT TEAM */}
-
         <div className="dashboard-card">
-
           <h3>Select Team</h3>
 
           {loading ? (
             <p>Loading teams...</p>
           ) : teams.length === 0 ? (
-            <p>No teams available.</p>
+            <div>
+              <p>
+                No approved team memberships were found for:
+              </p>
+
+              <strong>{profile?.email || 'your account'}</strong>
+
+              <p>
+                Check that this email matches the email in
+                the team_members table and that the membership
+                status is approved.
+              </p>
+
+              <button
+                type="button"
+                onClick={loadProfileAndTeams}
+              >
+                Try Again
+              </button>
+            </div>
           ) : (
             <select
-              value={
-                selectedTeam
-                  ? selectedTeam.id
-                  : ''
-              }
+              value={selectedTeam?.id ?? ''}
               onChange={handleTeamChange}
             >
-              {teams.map((team) => (
-                <option
-                  key={team.id}
-                  value={team.id}
-                >
+              {teams.map(team => (
+                <option key={team.id} value={team.id}>
                   {team.name}
                 </option>
               ))}
             </select>
           )}
-
         </div>
 
-        {/* CHAT */}
-
         {selectedTeam && (
-
           <div className="dashboard-card">
-
-            {/* CHAT HEADER */}
-
             <div
               style={{
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
+                gap: '12px',
                 marginBottom: '15px'
               }}
             >
-
               <h2 style={{ margin: 0 }}>
                 💻 {selectedTeam.name} Chat
               </h2>
@@ -315,10 +309,7 @@ function Chat() {
               >
                 Refresh
               </button>
-
             </div>
-
-            {/* MESSAGES AREA */}
 
             <div
               style={{
@@ -335,20 +326,12 @@ function Chat() {
                 boxSizing: 'border-box'
               }}
             >
-
               {messages.length === 0 ? (
-
-                <p>
-                  No messages yet. Start the
-                  conversation!
-                </p>
-
+                <p>No messages yet. Start the conversation!</p>
               ) : (
-
-                messages.map((item) => (
-
+                messages.map((item, index) => (
                   <div
-                    key={item.id}
+                    key={item.id ?? `${item.sender}-${index}`}
                     style={{
                       padding: '10px 12px',
                       borderRadius: '8px',
@@ -356,29 +339,21 @@ function Chat() {
                       flexShrink: 0
                     }}
                   >
-
-                    <strong>
-                      {item.sender}
-                    </strong>
+                    <strong>{item.sender}</strong>
 
                     <p
                       style={{
-                        margin: '5px 0 0 0',
-                        wordBreak: 'break-word'
+                        margin: '5px 0 0',
+                        wordBreak: 'break-word',
+                        whiteSpace: 'pre-wrap'
                       }}
                     >
                       {item.message}
                     </p>
-
                   </div>
-
                 ))
-
               )}
-
             </div>
-
-            {/* MESSAGE INPUT */}
 
             <form
               onSubmit={sendMessage}
@@ -388,37 +363,28 @@ function Chat() {
                 width: '100%'
               }}
             >
-
               <input
                 type="text"
                 placeholder="Type your message..."
                 value={message}
-                onChange={(e) =>
-                  setMessage(e.target.value)
-                }
+                onChange={event => setMessage(event.target.value)}
                 style={{
                   flex: 1,
                   minWidth: 0
                 }}
+                disabled={sending}
               />
 
               <button
                 type="submit"
-                disabled={sending}
+                disabled={sending || !message.trim()}
               >
-                {sending
-                  ? 'Sending...'
-                  : 'Send'}
+                {sending ? 'Sending...' : 'Send'}
               </button>
-
             </form>
-
           </div>
-
         )}
-
       </main>
-
     </div>
   )
 }
