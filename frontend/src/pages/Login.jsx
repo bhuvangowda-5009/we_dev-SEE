@@ -1,4 +1,3 @@
-
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../supabase'
@@ -9,6 +8,7 @@ function Login() {
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
 
   const handleSubmit = async (e) => {
@@ -26,7 +26,7 @@ function Login() {
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
         email: cleanEmail,
-        password: password
+        password
       })
 
       if (error) {
@@ -36,7 +36,6 @@ function Login() {
       }
 
       console.log('Login successful:', data.user.email)
-
       navigate('/dashboard')
     } catch (error) {
       console.error('Unexpected login error:', error)
@@ -52,17 +51,17 @@ function Login() {
         <h1>TeamHub</h1>
         <p>Team Collaboration Platform</p>
 
-        <form onSubmit={handleSubmit} autoComplete="on">
+        <form onSubmit={handleSubmit} autoComplete="off">
           <label htmlFor="login-email">Email</label>
 
           <input
             id="login-email"
             type="email"
-            name="email"
+            name="login-email"
             placeholder="Enter your email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            autoComplete="username"
+            autoComplete="off"
             required
           />
 
@@ -70,14 +69,31 @@ function Login() {
 
           <input
             id="login-password"
-            type="password"
-            name="password"
+            type={showPassword ? 'text' : 'password'}
+            name="login-password"
             placeholder="Enter your password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            autoComplete="current-password"
+            autoComplete="new-password"
             required
           />
+
+          <div style={{ marginTop: '8px', marginBottom: '12px' }}>
+            <label style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              cursor: 'pointer'
+            }}>
+              <input
+                type="checkbox"
+                checked={showPassword}
+                onChange={(e) => setShowPassword(e.target.checked)}
+                style={{ width: 'auto' }}
+              />
+              Show password
+            </label>
+          </div>
 
           <button type="submit" disabled={loading}>
             {loading ? 'Logging in...' : 'Login'}

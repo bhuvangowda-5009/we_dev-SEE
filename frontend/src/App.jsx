@@ -1,4 +1,13 @@
-import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import {
+  BrowserRouter,
+  Routes,
+  Route,
+  useLocation,
+  Navigate
+} from 'react-router-dom'
+
+import { supabase } from './supabase'
 
 import Login from './pages/Login'
 import Signup from './pages/Signup'
@@ -14,11 +23,38 @@ import './css/components.css'
 
 function AppLayout() {
   const location = useLocation()
+  const [session, setSession] = useState(undefined)
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session)
+    })
+
+    const {
+      data: { subscription }
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session)
+    })
+
+    return () => subscription.unsubscribe()
+  }, [])
+
+  if (session === undefined) {
+    return <p>Loading...</p>
+  }
 
   const isAuthPage =
     location.pathname === '/' ||
     location.pathname === '/login' ||
     location.pathname === '/signup'
+
+  if (!session && !isAuthPage) {
+    return <Navigate to="/login" replace />
+  }
+
+  if (session && isAuthPage) {
+    return <Navigate to="/dashboard" replace />
+  }
 
   if (isAuthPage) {
     return (
@@ -42,6 +78,7 @@ function AppLayout() {
           <Route path="/tasks" element={<Tasks />} />
           <Route path="/files" element={<Files />} />
           <Route path="/profile" element={<Profile />} />
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </main>
     </div>

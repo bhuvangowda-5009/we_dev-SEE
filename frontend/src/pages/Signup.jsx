@@ -1,4 +1,3 @@
-
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../supabase'
@@ -10,7 +9,9 @@ function Signup() {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
   const [role, setRole] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
 
   const handleSubmit = async (e) => {
@@ -20,13 +21,18 @@ function Signup() {
     const cleanEmail = email.trim().toLowerCase()
     const cleanRole = role.trim()
 
-    if (!cleanName || !cleanEmail || !password || !cleanRole) {
+    if (!cleanName || !cleanEmail || !password || !confirmPassword || !cleanRole) {
       alert('Please fill all fields')
       return
     }
 
     if (password.length < 6) {
       alert('Password must be at least 6 characters')
+      return
+    }
+
+    if (password !== confirmPassword) {
+      alert('Passwords do not match. Please re-enter your password.')
       return
     }
 
@@ -37,7 +43,7 @@ function Signup() {
         email: cleanEmail,
         password,
         options: {
-          emailRedirectTo: window.location.origin + '/login',
+          emailRedirectTo: `${window.location.origin}/login`,
           data: {
             name: cleanName,
             role: cleanRole
@@ -82,9 +88,8 @@ function Signup() {
         return
       }
 
-      alert('Account and profile created successfully!')
-      navigate('/login')
-
+      alert('Account created successfully!')
+      navigate('/dashboard')
     } catch (error) {
       console.error('Signup error:', error)
       alert(error.message || 'Something went wrong during signup')
@@ -100,44 +105,85 @@ function Signup() {
         <p>Create your account</p>
 
         <form onSubmit={handleSubmit} autoComplete="off">
-          <label>Name</label>
+          <label htmlFor="signup-name">Name</label>
           <input
+            id="signup-name"
             type="text"
             name="signup-name"
             placeholder="Enter your name"
             value={name}
             onChange={(e) => setName(e.target.value)}
             autoComplete="off"
+            required
           />
 
-          <label>Email</label>
+          <label htmlFor="signup-email">Email</label>
           <input
+            id="signup-email"
             type="email"
             name="signup-email"
             placeholder="Enter your email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             autoComplete="off"
+            required
           />
 
-          <label>Password</label>
+          <label htmlFor="signup-password">Password</label>
           <input
-            type="password"
+            id="signup-password"
+            type={showPassword ? 'text' : 'password'}
             name="signup-password"
             placeholder="Create a password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             autoComplete="new-password"
+            minLength={6}
+            required
           />
 
-          <label>Role</label>
+          <label htmlFor="confirm-password">Re-enter Password</label>
           <input
+            id="confirm-password"
+            type={showPassword ? 'text' : 'password'}
+            name="confirm-password"
+            placeholder="Re-enter your password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            autoComplete="new-password"
+            required
+          />
+
+          <label
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              marginTop: '12px',
+              cursor: 'pointer'
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={showPassword}
+              onChange={(e) => setShowPassword(e.target.checked)}
+              style={{ width: 'auto', margin: 0 }}
+            />
+            Show password
+           
+          </label>
+          <br />
+
+          <label htmlFor="signup-role">Role</label>
+          <input
+            id="signup-role"
             type="text"
             name="signup-role"
             placeholder="Developer / Designer / Manager"
             value={role}
             onChange={(e) => setRole(e.target.value)}
             autoComplete="off"
+            required
           />
 
           <button type="submit" disabled={loading}>
@@ -149,7 +195,10 @@ function Signup() {
           Already have an account?{' '}
           <span
             onClick={() => navigate('/login')}
-            style={{ cursor: 'pointer' }}
+            style={{
+              cursor: 'pointer',
+              textDecoration: 'underline'
+            }}
           >
             Login
           </span>
