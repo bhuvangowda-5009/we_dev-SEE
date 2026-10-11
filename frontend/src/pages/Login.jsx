@@ -1,3 +1,4 @@
+
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../supabase'
@@ -10,6 +11,7 @@ function Login() {
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [resetLoading, setResetLoading] = useState(false)
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -42,6 +44,39 @@ function Login() {
       alert('Something went wrong. Please try again.')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleForgotPassword = async () => {
+    const cleanEmail = email.trim().toLowerCase()
+
+    if (!cleanEmail) {
+      alert('Please enter your registered email address first.')
+      return
+    }
+
+    setResetLoading(true)
+
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(
+        cleanEmail,
+        {
+          redirectTo: `${window.location.origin}/reset-password`
+        }
+      )
+
+      if (error) {
+        console.error('Password reset error:', error.message)
+        alert('Unable to send reset email: ' + error.message)
+        return
+      }
+
+      alert('If an account exists for this email, a password reset link will be sent. Please check your inbox and spam folder.')
+    } catch (error) {
+      console.error('Unexpected password reset error:', error)
+      alert('Something went wrong. Please try again.')
+    } finally {
+      setResetLoading(false)
     }
   }
 
@@ -80,6 +115,31 @@ function Login() {
             spellCheck={false}
             required
           />
+
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'flex-end',
+              marginTop: '8px'
+            }}
+          >
+            <button
+              type="button"
+              onClick={handleForgotPassword}
+              disabled={resetLoading}
+              style={{
+                background: 'none',
+                border: 'none',
+                padding: 0,
+                color: '#2563eb',
+                textDecoration: 'underline',
+                cursor: resetLoading ? 'wait' : 'pointer',
+                fontSize: '14px'
+              }}
+            >
+              {resetLoading ? 'Sending reset link...' : 'Forgot Password?'}
+            </button>
+          </div>
 
           <div style={{ marginTop: '8px', marginBottom: '12px' }}>
             <label

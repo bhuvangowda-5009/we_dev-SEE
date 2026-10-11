@@ -1,3 +1,4 @@
+
 import { useEffect, useState } from 'react'
 import {
   BrowserRouter,
@@ -10,6 +11,7 @@ import {
 import { supabase } from './supabase'
 
 import Login from './pages/Login'
+import ResetPassword from './pages/ResetPassword'
 import Signup from './pages/Signup'
 import Dashboard from './pages/Dashboard'
 import Team from './pages/Team'
@@ -26,9 +28,21 @@ function AppLayout() {
   const [session, setSession] = useState(undefined)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session)
-    })
+    let mounted = true
+
+    const initializeSession = async () => {
+      const { data, error } = await supabase.auth.getSession()
+
+      if (error) {
+        console.error('Unable to get session:', error.message)
+      }
+
+      if (mounted) {
+        setSession(data?.session ?? null)
+      }
+    }
+
+    initializeSession()
 
     const {
       data: { subscription }
@@ -36,7 +50,10 @@ function AppLayout() {
       setSession(session)
     })
 
-    return () => subscription.unsubscribe()
+    return () => {
+      mounted = false
+      subscription.unsubscribe()
+    }
   }, [])
 
   if (session === undefined) {
@@ -48,24 +65,52 @@ function AppLayout() {
     location.pathname === '/login' ||
     location.pathname === '/signup'
 
+  const isResetPasswordPage =
+    location.pathname === '/reset-password'
+
+  // Allow password recovery to open without an existing session.
+  // Supabase establishes a recovery session when the reset link is valid.
+  if (isResetPasswordPage) {
+    return (
+      <Routes>
+        <Route
+          path="/reset-password"
+          element={<ResetPassword />}
+        />
+        <Route
+          path="*"
+          element={<Navigate to="/reset-password" replace />}
+        />
+      </Routes>
+    )
+  }
+
+  // Protect all application pages.
   if (!session && !isAuthPage) {
     return <Navigate to="/login" replace />
   }
 
+  // Redirect logged-in users away from login and signup.
   if (session && isAuthPage) {
     return <Navigate to="/dashboard" replace />
   }
 
+  // Public authentication pages.
   if (isAuthPage) {
     return (
       <Routes>
         <Route path="/" element={<Login />} />
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
+        <Route
+          path="*"
+          element={<Navigate to="/login" replace />}
+        />
       </Routes>
     )
   }
 
+  // Main application with sidebar.
   return (
     <div className="app-layout">
       <Sidebar />
@@ -78,7 +123,11 @@ function AppLayout() {
           <Route path="/tasks" element={<Tasks />} />
           <Route path="/files" element={<Files />} />
           <Route path="/profile" element={<Profile />} />
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+
+          <Route
+            path="*"
+            element={<Navigate to="/dashboard" replace />}
+          />
         </Routes>
       </main>
     </div>
