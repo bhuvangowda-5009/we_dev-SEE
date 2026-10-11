@@ -1,69 +1,320 @@
+
+/* ========================================
+   TEAMHUB — PREMIUM LOGIN PAGE
+======================================== */
+
+* {
+  box-sizing: border-box;
+}
+
 .login-page {
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   justify-content: center;
   align-items: center;
-  background: #f5f7fb;
+  padding: 32px 20px;
+  position: relative;
+  overflow: hidden;
+  font-family: Inter, "Segoe UI", Arial, sans-serif;
+
+  background:
+    radial-gradient(
+      circle at 15% 15%,
+      rgba(79, 70, 229, 0.22),
+      transparent 35%
+    ),
+    radial-gradient(
+      circle at 85% 85%,
+      rgba(14, 165, 233, 0.16),
+      transparent 35%
+    ),
+    #0b1120;
 }
 
-.login-box {
-  width: 400px;
-  background: white;
-  padding: 40px;
-  border-radius: 12px;
-  box-shadow: 0 5px 25px rgba(0, 0, 0, 0.08);
+/* Decorative background lights */
+
+.login-page::before,
+.login-page::after {
+  content: "";
+  position: absolute;
+  width: 280px;
+  height: 280px;
+  border-radius: 50%;
+  filter: blur(90px);
+  opacity: 0.25;
+  pointer-events: none;
 }
+
+.login-page::before {
+  background: #6366f1;
+  top: -100px;
+  left: -80px;
+}
+
+.login-page::after {
+  background: #06b6d4;
+  bottom: -120px;
+  right: -80px;
+}
+
+/* Main login card */
+
+.login-box {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 440px;
+  padding: 44px 40px 36px;
+
+  background: rgba(255, 255, 255, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  border-radius: 24px;
+
+  box-shadow:
+    0 25px 80px rgba(0, 0, 0, 0.35),
+    0 0 0 1px rgba(255, 255, 255, 0.04);
+
+  animation: loginAppear 0.6s ease-out;
+}
+
+/* TeamHub heading */
 
 .login-box h1 {
   text-align: center;
-  font-size: 32px;
-  margin-bottom: 8px;
+  margin: 0 0 10px;
+
+  font-size: 36px;
+  font-weight: 800;
+  letter-spacing: -1.5px;
+
+  background: linear-gradient(
+    110deg,
+    #4338ca,
+    #6366f1,
+    #0891b2
+  );
+
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
-.login-box > p {
+.login-box > p:not(.signup-text) {
   text-align: center;
-  color: #6b7280;
-  margin-bottom: 30px;
+  margin: 0 0 34px;
+
+  color: #64748b;
+  font-size: 14px;
+  letter-spacing: 0.2px;
 }
+
+/* Form layout */
 
 .login-box form {
   display: flex;
   flex-direction: column;
 }
 
-.login-box label {
-  margin-bottom: 7px;
+/* Input labels */
+
+.login-box form > label {
+  margin-bottom: 9px;
+  color: #1e293b;
+
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+
+/* Email and password inputs */
+
+.login-box form > input {
+  width: 100%;
+  height: 49px;
+  padding: 0 15px;
+  margin: 0 0 22px;
+
+  background: #f8fafc;
+  color: #0f172a;
+
+  border: 1px solid #e2e8f0;
+  border-radius: 11px;
+  outline: none;
+
+  font-size: 14px;
+  font-family: inherit;
+
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    background 0.2s ease;
+}
+
+.login-box form > input::placeholder {
+  color: #94a3b8;
+}
+
+.login-box form > input:hover {
+  border-color: #cbd5e1;
+}
+
+.login-box form > input:focus {
+  background: #ffffff;
+  border-color: #6366f1;
+
+  box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.12);
+}
+
+/* Forgot password button */
+
+.login-box form > div button[type="button"] {
+  color: #4f46e5 !important;
+  font-size: 13px !important;
   font-weight: 600;
+
+  transition: color 0.2s ease;
 }
 
-.login-box input {
-  padding: 12px;
-  margin-bottom: 18px;
-  border: 1px solid #d1d5db;
-  border-radius: 7px;
-  font-size: 14px;
+.login-box form > div button[type="button"]:hover {
+  background: transparent !important;
+  color: #3730a3 !important;
 }
 
-.login-box button {
-  padding: 13px;
+/* Show password checkbox section */
+
+.login-box form > div label {
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.login-box form input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: #4f46e5;
+  cursor: pointer;
+}
+
+/* Primary login button */
+
+.login-box form > button[type="submit"] {
+  width: 100%;
+  min-height: 49px;
+  margin-top: 8px;
+  padding: 13px 18px;
+
   border: none;
-  border-radius: 7px;
-  background: #4f46e5;
-  color: white;
-  font-size: 16px;
+  border-radius: 11px;
+
+  background: linear-gradient(
+    110deg,
+    #4f46e5,
+    #6366f1 55%,
+    #4f46e5
+  );
+
+  background-size: 200% 100%;
+  color: #ffffff;
+
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+
   cursor: pointer;
+
+  box-shadow: 0 7px 18px rgba(79, 70, 229, 0.23);
+
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease,
+    background-position 0.3s ease,
+    opacity 0.2s ease;
 }
 
-.login-box button:hover {
-  background: #4338ca;
+.login-box form > button[type="submit"]:hover:not(:disabled) {
+  background-position: 100% 0;
+  transform: translateY(-2px);
+  box-shadow: 0 11px 24px rgba(79, 70, 229, 0.32);
 }
 
-.signup-text {
-  margin-top: 20px;
-  font-size: 14px;
+.login-box form > button[type="submit"]:active:not(:disabled) {
+  transform: translateY(0);
 }
 
-.signup-text span {
+.login-box form > button[type="submit"]:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+/* Signup section */
+
+.login-box .signup-text {
+  margin: 28px 0 0;
+  padding-top: 22px;
+
+  border-top: 1px solid #eef2f7;
+
+  color: #64748b;
+  text-align: center;
+  font-size: 13px;
+}
+
+.login-box .signup-text span {
   color: #4f46e5;
-  cursor: pointer;
+  font-weight: 700;
+  margin-left: 3px;
+
+  transition: color 0.2s ease;
+}
+
+.login-box .signup-text span:hover {
+  color: #3730a3;
+}
+
+/* Entrance animation */
+
+@keyframes loginAppear {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Mobile responsive layout */
+
+@media (max-width: 480px) {
+  .login-page {
+    padding: 20px 14px;
+  }
+
+  .login-box {
+    padding: 34px 24px 28px;
+    border-radius: 20px;
+  }
+
+  .login-box h1 {
+    font-size: 32px;
+  }
+}
+
+/* Respect reduced-motion preferences */
+
+@media (prefers-reduced-motion: reduce) {
+  .login-box {
+    animation: none;
+  }
+
+  .login-box *,
+  .login-box *::before,
+  .login-box *::after {
+    transition: none !important;
+  }
 }
