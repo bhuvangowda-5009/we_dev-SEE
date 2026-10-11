@@ -66,7 +66,11 @@ async function getProfileForUser(user) {
 
   return {
     user_id: user.id,
-    name: data?.name || user.user_metadata?.name || user.email || 'User',
+    name:
+      data?.name ||
+      user.user_metadata?.name ||
+      user.email ||
+      'User',
     email: (data?.email || user.email || '').trim().toLowerCase()
   }
 }
@@ -119,7 +123,6 @@ async function requireTeamMember(teamId, email, res) {
   return true
 }
 
-// Return IDs of teams the logged-in user can access.
 async function getAccessibleTeamIds(user, profile) {
   const { data: memberships, error: membershipError } = await supabase
     .from('team_members')
@@ -172,7 +175,9 @@ app.get('/api/users/search', async (req, res) => {
 
     if (error) {
       console.error('User search error:', error.message)
-      return res.status(500).json({ error: 'Unable to search users.' })
+      return res.status(500).json({
+        error: 'Unable to search users.'
+      })
     }
 
     res.json(data || [])
@@ -202,7 +207,9 @@ app.get('/api/teams', async (req, res) => {
 
     if (error) {
       console.error('Load teams error:', error.message)
-      return res.status(500).json({ error: 'Unable to load your teams.' })
+      return res.status(500).json({
+        error: 'Unable to load your teams.'
+      })
     }
 
     res.json(data || [])
@@ -313,9 +320,8 @@ app.post('/api/teams', async (req, res) => {
       .from('teams')
       .insert({
         name: name.trim(),
-        description: typeof description === 'string'
-          ? description.trim()
-          : '',
+        description:
+          typeof description === 'string' ? description.trim() : '',
         created_by: user.id,
         join_code: joinCode,
         icon: '👥',
@@ -397,7 +403,9 @@ app.post('/api/teams/join', async (req, res) => {
       .maybeSingle()
 
     if (error) {
-      return res.status(500).json({ error: 'Unable to check the join code.' })
+      return res.status(500).json({
+        error: 'Unable to check the join code.'
+      })
     }
 
     if (!team) {
@@ -799,7 +807,9 @@ app.get('/api/tasks', async (req, res) => {
       query = query.eq('team_id', requestedTeamId)
     }
 
-    const { data, error } = await query.order('id', { ascending: false })
+    const { data, error } = await query.order('id', {
+      ascending: false
+    })
 
     if (error) {
       console.error('Load tasks error:', error.message)
@@ -829,7 +839,9 @@ app.post('/api/tasks', async (req, res) => {
     }
 
     if (!Number.isInteger(teamId) || teamId <= 0) {
-      return res.status(400).json({ error: 'A valid team_id is required.' })
+      return res.status(400).json({
+        error: 'A valid team_id is required.'
+      })
     }
 
     if (!(await requireTeamMember(teamId, profile.email, res))) return
@@ -844,9 +856,8 @@ app.post('/api/tasks', async (req, res) => {
       .from('tasks')
       .insert({
         title: title.trim(),
-        description: typeof description === 'string'
-          ? description.trim()
-          : '',
+        description:
+          typeof description === 'string' ? description.trim() : '',
         status: taskStatus,
         team_id: teamId
       })
@@ -956,7 +967,9 @@ app.get('/api/messages', async (req, res) => {
 
     if (error) {
       console.error('Load messages error:', error.message)
-      return res.status(500).json({ error: 'Unable to load messages.' })
+      return res.status(500).json({
+        error: 'Unable to load messages.'
+      })
     }
 
     res.json(data || [])
@@ -985,7 +998,9 @@ app.get('/api/messages/count', async (req, res) => {
 
     if (error) {
       console.error('Message count error:', error.message)
-      return res.status(500).json({ error: 'Unable to count messages.' })
+      return res.status(500).json({
+        error: 'Unable to count messages.'
+      })
     }
 
     res.json({ count: count ?? 0 })
@@ -1011,7 +1026,9 @@ app.post('/api/messages', async (req, res) => {
     }
 
     if (!Number.isInteger(teamId) || teamId <= 0) {
-      return res.status(400).json({ error: 'A valid team_id is required.' })
+      return res.status(400).json({
+        error: 'A valid team_id is required.'
+      })
     }
 
     if (!(await requireTeamMember(teamId, profile.email, res))) return
@@ -1039,7 +1056,159 @@ app.post('/api/messages', async (req, res) => {
   }
 })
 
-// ==================== START SERVER (ONLY ONCE) ====================
+// ==================== TEAM FILES ====================
+
+// List files belonging to an approved team.
+app.get('/api/files', async (req, res) => {
+  try {
+    const user = await requireUser(req, res)
+    if (!user) return
+
+    const teamId = Number(req.query.team_id)
+    const profile = await getProfileForUser(user)
+
+    if (!(await requireTeamMember(teamId, profile.email, res))) return
+
+    const { data, error } = await supabase.storage
+      .from('files')
+      .list(String(teamId), {
+        limit: 100,
+        sortBy: { column: 'created_at', order: 'desc' }
+      })
+
+    if (error) {
+      console.error('List team files error:', error.message)
+      return res.status(500).json({
+        error: 'Unable to load team files.'
+      })
+    }
+
+    const result = (data || [])
+      .filter(file => file.name && file.id)
+      .map(file => ({
+        name: file.name,
+        size: file.metadata?.size || 0,
+        created_at: file.created_at
+      }))
+
+    res.json(result)
+  } catch (error) {
+    console.error('List files error:', error.message)
+    res.status(500).json({ error: 'Failed to load files.' })
+  }
+})
+
+// Upload a file to an approved team's folder.
+app.post(
+  '/api/files',
+  express.raw({
+    type: 'application/octet-stream',
+    limit: '25mb'
+  }),
+  async (req, res) => {
+    try {
+      const user = await requireUser(req, res)
+      if (!user) return
+
+      const teamId = Number(req.query.team_id)
+      const originalName = String(req.query.name || '')
+      const profile = await getProfileForUser(user)
+
+      if (!(await requireTeamMember(teamId, profile.email, res))) return
+
+      if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+        return res.status(400).json({
+          error: 'Choose a file to upload.'
+        })
+      }
+
+      if (req.body.length > 25 * 1024 * 1024) {
+        return res.status(413).json({
+          error: 'Maximum file size is 25 MB.'
+        })
+      }
+
+      const safeName = originalName
+        .split(/[\\/]/)
+        .pop()
+        .replace(/[^a-zA-Z0-9._ -]/g, '_')
+        .trim()
+        .slice(0, 150)
+
+      if (!safeName || safeName === '.' || safeName === '..') {
+        return res.status(400).json({ error: 'Invalid filename.' })
+      }
+
+      const storedName = `${Date.now()}-${safeName}`
+      const storagePath = `${teamId}/${storedName}`
+
+      const { error } = await supabase.storage
+        .from('files')
+        .upload(storagePath, req.body, {
+          contentType: 'application/octet-stream',
+          upsert: false
+        })
+
+      if (error) {
+        console.error('Upload team file error:', error.message)
+        return res.status(500).json({ error: 'File upload failed.' })
+      }
+
+      res.status(201).json({
+        message: 'File uploaded successfully.',
+        name: storedName
+      })
+    } catch (error) {
+      console.error('Upload file error:', error.message)
+      res.status(500).json({ error: 'Failed to upload file.' })
+    }
+  }
+)
+
+// Download a file only after verifying team membership.
+app.get('/api/files/:teamId/:fileName', async (req, res) => {
+  try {
+    const user = await requireUser(req, res)
+    if (!user) return
+
+    const teamId = Number(req.params.teamId)
+    const fileName = req.params.fileName
+    const profile = await getProfileForUser(user)
+
+    if (!(await requireTeamMember(teamId, profile.email, res))) return
+
+    if (
+      !fileName ||
+      fileName === '.' ||
+      fileName === '..' ||
+      /[\\/]/.test(fileName)
+    ) {
+      return res.status(400).json({ error: 'Invalid filename.' })
+    }
+
+    const { data, error } = await supabase.storage
+      .from('files')
+      .download(`${teamId}/${fileName}`)
+
+    if (error || !data) {
+      return res.status(404).json({ error: 'File not found.' })
+    }
+
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`
+    )
+    res.setHeader('Content-Type', 'application/octet-stream')
+    res.setHeader('Cache-Control', 'private, no-store')
+
+    res.send(Buffer.from(await data.arrayBuffer()))
+  } catch (error) {
+    console.error('Download team file error:', error.message)
+    res.status(500).json({ error: 'Failed to download file.' })
+  }
+})
+
+// ==================== START SERVER ====================
 
 app.listen(PORT, () => {
   console.log(`TeamHub backend running on http://localhost:${PORT}`)

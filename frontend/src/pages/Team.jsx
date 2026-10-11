@@ -1,5 +1,5 @@
-
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import Sidebar from '../components/Sidebar'
 import { supabase } from '../supabase'
 import '../css/dashboard.css'
@@ -14,6 +14,8 @@ const API_URL = API_ROOT.endsWith('/api')
   : `${API_ROOT}/api`
 
 function Team() {
+  const navigate = useNavigate()
+
   const [teams, setTeams] = useState([])
   const [profiles, setProfiles] = useState([])
   const [teamName, setTeamName] = useState('')
@@ -29,6 +31,7 @@ function Team() {
   const [refreshing, setRefreshing] = useState(false)
   const [currentUser, setCurrentUser] = useState(null)
   const [createdCode, setCreatedCode] = useState('')
+  const [copiedTeam, setCopiedTeam] = useState(null)
 
   useEffect(() => {
     initialize()
@@ -43,6 +46,7 @@ function Team() {
 
       if (error || !user) {
         alert('Please log in first.')
+        navigate('/login')
         return
       }
 
@@ -67,24 +71,32 @@ function Team() {
     return session.access_token
   }
 
+  async function apiFetch(path, options = {}) {
+    const token = await getAccessToken()
+
+    const response = await fetch(`${API_URL}${path}`, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+        ...options.headers
+      }
+    })
+
+    const data = await response.json()
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Something went wrong.')
+    }
+
+    return data
+  }
+
   async function loadTeams() {
     setRefreshing(true)
 
     try {
-      const token = await getAccessToken()
-
-      const response = await fetch(`${API_URL}/teams`, {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Unable to load your teams.')
-      }
-
+      const data = await apiFetch('/teams')
       setTeams(Array.isArray(data) ? data : [])
     } catch (error) {
       console.error('Load teams error:', error)
@@ -103,22 +115,9 @@ function Team() {
     setSearching(true)
 
     try {
-      const token = await getAccessToken()
-
-      const response = await fetch(
-        `${API_URL}/users/search?q=${encodeURIComponent(search.trim())}`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`
-          }
-        }
+      const data = await apiFetch(
+        `/users/search?q=${encodeURIComponent(search.trim())}`
       )
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Unable to search registered users.')
-      }
 
       setProfiles(Array.isArray(data) ? data : [])
     } catch (error) {
@@ -156,26 +155,16 @@ function Team() {
     setLoading(true)
 
     try {
-      const token = await getAccessToken()
-
-      const response = await fetch(`${API_URL}/teams`, {
+      const data = await apiFetch('/teams', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
         body: JSON.stringify({
           name: teamName.trim(),
           description: description.trim(),
-          member_user_ids: selectedMembers.map(member => member.user_id)
+          member_user_ids: selectedMembers.map(
+            member => member.user_id
+          )
         })
       })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Unable to create team.')
-      }
 
       setTeamName('')
       setDescription('')
@@ -186,11 +175,13 @@ function Team() {
 
       await loadTeams()
 
-      alert(
-        data.join_code
-          ? `Team created! Join code: ${data.join_code}`
-          : 'Team created successfully.'
-      )
+      if (data.join_code) {
+        alert(
+          `Team created successfully!\n\nInvitation code: ${data.join_code}\n\nShare this code with teammates who want to join.`
+        )
+      } else {
+        alert('Team created, but no invitation code was returned.')
+      }
     } catch (error) {
       console.error('Create team error:', error)
       alert(error.message)
@@ -199,44 +190,50 @@ function Team() {
     }
   }
 
+  async function copyTeamCode(team) {
+    if (!team.join_code) {
+      alert(
+        'No invitation code was returned for this team. Check the backend GET /api/teams response.'
+      )
+      return
+    }
+
+    try {
+      await navigator.clipboard.writeText(team.join_code)
+      setCopiedTeam(team.id)
+
+      setTimeout(() => {
+        setCopiedTeam(null)
+      }, 2000)
+    } catch (error) {
+      console.error('Copy code error:', error)
+      alert(`Copy this invitation code manually: ${team.join_code}`)
+    }
+  }
+
   async function joinUsingCode() {
     if (!joinCode.trim()) {
-      alert('Enter a team join code.')
+      alert('Enter a team invitation code.')
       return
     }
 
     setJoining(true)
 
     try {
-      const token = await getAccessToken()
-
-      const response = await fetch(`${API_URL}/teams/join`, {
+      const data = await apiFetch('/teams/join', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
         body: JSON.stringify({
           code: joinCode.trim().toUpperCase()
         })
       })
 
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(
-          data.error || 'Unable to request team membership.'
-        )
-      }
-
       setJoinCode('')
 
       alert(
         data.message ||
-          'Join request submitted. The team administrator may need to approve it.'
+        'Join request submitted. The team administrator must approve your request.'
       )
 
-      // Pending requests do not automatically add the team to My Teams.
       await loadTeams()
     } catch (error) {
       console.error('Join team error:', error)
@@ -248,22 +245,7 @@ function Team() {
 
   async function loadMembers(teamId) {
     try {
-      const token = await getAccessToken()
-
-      const response = await fetch(
-        `${API_URL}/teams/${teamId}/members`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`
-          }
-        }
-      )
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Unable to load team members.')
-      }
+      const data = await apiFetch(`/teams/${teamId}/members`)
 
       setMembers(previous => ({
         ...previous,
@@ -307,12 +289,8 @@ function Team() {
       <main className="dashboard-content teams-content">
         <header className="dashboard-header teams-header">
           <div>
-            <span className="teams-eyebrow">
-              TEAM WORKSPACE
-            </span>
-
+            <span className="teams-eyebrow">TEAM WORKSPACE</span>
             <h1>Teams</h1>
-
             <p>
               Bring people together, organize projects, and collaborate.
             </p>
@@ -332,9 +310,7 @@ function Team() {
           {/* CREATE TEAM */}
           <section className="dashboard-card teams-panel create-team-panel">
             <div className="teams-section-heading">
-              <div className="teams-heading-icon purple-icon">
-                ＋
-              </div>
+              <div className="teams-heading-icon purple-icon">＋</div>
 
               <div>
                 <h2>Create a team</h2>
@@ -371,9 +347,7 @@ function Team() {
               </div>
 
               <div className="teams-field">
-                <label htmlFor="user-search">
-                  Add existing users
-                </label>
+                <label htmlFor="user-search">Add existing users</label>
 
                 <div className="teams-search-row">
                   <input
@@ -466,8 +440,20 @@ function Team() {
 
               {createdCode && (
                 <div className="teams-created-code">
-                  <span>Your latest team join code</span>
+                  <span>Your latest team invitation code</span>
                   <strong>{createdCode}</strong>
+
+                  <button
+                    type="button"
+                    className="teams-secondary-button"
+                    onClick={() =>
+                      navigator.clipboard.writeText(createdCode)
+                        .then(() => alert('Invitation code copied!'))
+                        .catch(() => alert(`Copy this code: ${createdCode}`))
+                    }
+                  >
+                    Copy Code
+                  </button>
                 </div>
               )}
             </div>
@@ -476,13 +462,11 @@ function Team() {
           {/* JOIN TEAM */}
           <section className="dashboard-card teams-panel join-team-panel">
             <div className="teams-section-heading">
-              <div className="teams-heading-icon teal-icon">
-                ↗
-              </div>
+              <div className="teams-heading-icon teal-icon">↗</div>
 
               <div>
                 <h2>Join a team</h2>
-                <p>Have an invitation code? Join a workspace.</p>
+                <p>Have an invitation code? Request to join a workspace.</p>
               </div>
             </div>
 
@@ -503,7 +487,7 @@ function Team() {
                   }
                 }}
                 placeholder="Enter your team code"
-                maxLength={20}
+                maxLength={30}
               />
             </div>
 
@@ -519,8 +503,8 @@ function Team() {
             <div className="teams-info-note">
               <span>🔒</span>
               <p>
-                If approval is required, the team administrator will review
-                your request.
+                Your request will be sent to the team administrator.
+                You can access the workspace after approval.
               </p>
             </div>
           </section>
@@ -533,7 +517,7 @@ function Team() {
               <span className="teams-eyebrow">YOUR WORKSPACES</span>
               <h2>My Teams</h2>
               <p>
-                Explore team workspaces and see who's collaborating.
+                Explore team workspaces, share invitation codes, and see who's collaborating.
               </p>
             </div>
 
@@ -552,13 +536,80 @@ function Team() {
             <div className="teams-grid">
               {teams.map((team, index) => (
                 <article className="teams-team-card" key={team.id}>
-                  <div className={`teams-team-icon teams-color-${index % 6}`}>
+                  <div
+                    className={`teams-team-icon teams-color-${index % 6}`}
+                  >
                     {getTeamIcon(team)}
                   </div>
 
                   <div className="teams-team-details">
                     <h3>{team.name}</h3>
-                    <p>{team.description || 'No description added yet.'}</p>
+                    <p>
+                      {team.description || 'No description added yet.'}
+                    </p>
+                  </div>
+
+                  {/* INVITATION CODE ON EVERY TEAM CARD */}
+                  <div
+                    style={{
+                      marginTop: '14px',
+                      padding: '12px',
+                      background: '#f8fafc',
+                      border: '1px solid #e2e8f0',
+                      borderRadius: '10px'
+                    }}
+                  >
+                    <small
+                      style={{
+                        display: 'block',
+                        color: '#64748b',
+                        marginBottom: '8px'
+                      }}
+                    >
+                      Team invitation code
+                    </small>
+
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: '10px',
+                        flexWrap: 'wrap'
+                      }}
+                    >
+                      <strong
+                        style={{
+                          fontSize: '15px',
+                          letterSpacing: '1px',
+                          overflowWrap: 'anywhere'
+                        }}
+                      >
+                        {team.join_code || 'Code unavailable'}
+                      </strong>
+
+                      <button
+                        type="button"
+                        className="teams-secondary-button"
+                        onClick={() => copyTeamCode(team)}
+                        disabled={!team.join_code}
+                      >
+                        {copiedTeam === team.id
+                          ? '✓ Copied!'
+                          : 'Copy Code'}
+                      </button>
+                    </div>
+
+                    <small
+                      style={{
+                        display: 'block',
+                        color: '#64748b',
+                        marginTop: '8px'
+                      }}
+                    >
+                      Share this code with people you want to invite.
+                      They must receive admin approval to join.
+                    </small>
                   </div>
 
                   <div className="teams-team-card-footer">

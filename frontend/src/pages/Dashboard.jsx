@@ -1,5 +1,5 @@
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { supabase } from '../supabase'
 import '../css/dashboard.css'
 
@@ -20,24 +20,72 @@ function Dashboard() {
   const [userName, setUserName] = useState('User')
   const [visibleTeamsCount, setVisibleTeamsCount] = useState(5)
 
+  // Approval and notification state
+  const [adminTeams, setAdminTeams] = useState([])
+  const [pendingRequests, setPendingRequests] = useState([])
+  const [showApprovals, setShowApprovals] = useState(false)
+  const [approvalsLoading, setApprovalsLoading] = useState(false)
+  const [actingOnRequest, setActingOnRequest] = useState(null)
+  const [notification, setNotification] = useState('')
+  const [approvalError, setApprovalError] = useState('')
+
+  // Used to distinguish new requests from requests already present
+  // when the Dashboard first loads.
+  const previousRequestIds = useRef(null)
+
+  const getAccessToken = useCallback(async () => {
+    const {
+      data: { session },
+      error
+    } = await supabase.auth.getSession()
+
+    if (error) throw error
+
+    if (!session?.access_token) {
+      throw new Error('Your session has expired. Please log in again.')
+    }
+
+    return session.access_token
+  }, [])
+
+  const apiFetch = useCallback(async (path, options = {}) => {
+    const token = await getAccessToken()
+
+    const response = await fetch(`${API_URL}${path}`, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+        ...options.headers
+      }
+    })
+
+    const data = await response.json().catch(() => ({}))
+
+    if (!response.ok) {
+      throw new Error(data.error || `Request failed: ${response.status}`)
+    }
+
+    return data
+  }, [getAccessToken])
+
   // Load the logged-in user's name
   const loadUser = useCallback(async () => {
     try {
       const {
         data: { user },
-        error,
+        error
       } = await supabase.auth.getUser()
 
       if (error) throw error
 
       if (user) {
-        const name =
+        setUserName(
           user.user_metadata?.name ||
           user.user_metadata?.full_name ||
           user.email?.split('@')[0] ||
           'User'
-
-        setUserName(name)
+        )
       }
     } catch (error) {
       console.error('Error loading user:', error.message)
@@ -47,10 +95,7 @@ function Dashboard() {
   // Load message count
   const loadMessageCount = useCallback(async () => {
     try {
-      const {
-        count,
-        error,
-      } = await supabase
+      const { count, error } = await supabase
         .from('messages')
         .select('*', { count: 'exact', head: true })
 
@@ -65,37 +110,19 @@ function Dashboard() {
     }
   }, [])
 
-  // Load dashboard data
+  // Load teams, tasks, messages and files
   const loadDashboard = useCallback(async () => {
     setLoading(true)
 
     try {
-      // Get the current logged-in user's session
-      const {
-        data: { session },
-        error: sessionError,
-      } = await supabase.auth.getSession()
-
-      if (sessionError) throw sessionError
-
-      if (!session?.access_token) {
-        throw new Error('No active session. Please log in again.')
-      }
-
-      // Send authentication token to the Node.js backend
       const headers = {
-        Authorization: `Bearer ${session.access_token}`,
+        Authorization: `Bearer ${await getAccessToken()}`
       }
 
-      // Load the logged-in user's teams
-      const teamsResponse = await fetch(`${API_URL}/teams`, {
-        headers,
-      })
+      const teamsResponse = await fetch(`${API_URL}/teams`, { headers })
 
       if (!teamsResponse.ok) {
-        throw new Error(
-          `Failed to load teams: HTTP ${teamsResponse.status}`
-        )
+        throw new Error(`Failed to load teams: HTTP ${teamsResponse.status}`)
       }
 
       const teamsData = await teamsResponse.json()
@@ -106,15 +133,10 @@ function Dashboard() {
 
       setTeams(teamsData)
 
-      // Load tasks
-      const tasksResponse = await fetch(`${API_URL}/tasks`, {
-        headers,
-      })
+      const tasksResponse = await fetch(`${API_URL}/tasks`, { headers })
 
       if (!tasksResponse.ok) {
-        throw new Error(
-          `Failed to load tasks: HTTP ${tasksResponse.status}`
-        )
+        throw new Error(`Failed to load tasks: HTTP ${tasksResponse.status}`)
       }
 
       const tasksData = await tasksResponse.json()
@@ -125,26 +147,21 @@ function Dashboard() {
 
       setTasks(tasksData)
 
-      // Load message count
-     const messagesResponse = await fetch(
-  `${API_URL}/messages/count`,
-  { headers }
-)
+      const messagesResponse = await fetch(
+        `${API_URL}/messages/count`,
+        { headers }
+      )
 
-if (!messagesResponse.ok) {
-  throw new Error(
-    `Failed to load message count: HTTP ${messagesResponse.status}`
-  )
-}
+      if (messagesResponse.ok) {
+        const messagesData = await messagesResponse.json()
+        setMessageCount(messagesData.count ?? 0)
+      } else {
+        console.error('Unable to load message count.')
+      }
 
-const messagesData = await messagesResponse.json()
-setMessageCount(messagesData.count ?? 0)
-
-      // Load files count
-      const { data: files, error: fileError } =
-        await supabase.storage
-          .from('files')
-          .list('', { limit: 1000 })
+      const { data: files, error: fileError } = await supabase.storage
+        .from('files')
+        .list('', { limit: 1000 })
 
       if (fileError) {
         console.error('Error loading files:', fileError.message)
@@ -156,14 +173,157 @@ setMessageCount(messagesData.count ?? 0)
     } finally {
       setLoading(false)
     }
-  }, [loadMessageCount])
+  }, [getAccessToken])
 
-  // Initial dashboard load and real-time message updates
+  // Find which teams the current user administers and load their
+  // pending join requests. Non-admin teams are ignored.
+  const loadApprovals = useCallback(async () => {
+    try {
+      const token = await getAccessToken()
+      const headers = {
+        Authorization: `Bearer ${token}`
+      }
+
+      const teamsResponse = await fetch(`${API_URL}/teams`, { headers })
+
+      if (!teamsResponse.ok) {
+        throw new Error('Unable to check team approval requests.')
+      }
+
+      const allTeams = await teamsResponse.json()
+
+      if (!Array.isArray(allTeams)) return
+
+      const results = await Promise.all(
+        allTeams.map(async team => {
+          try {
+            const response = await fetch(
+              `${API_URL}/teams/${team.id}/join-requests`,
+              { headers }
+            )
+
+            // The backend returns a forbidden response when the user
+            // is not an admin of this team.
+            if (response.status === 403) return null
+
+            if (!response.ok) {
+              console.error(
+                `Could not load requests for ${team.name}:`,
+                response.status
+              )
+              return null
+            }
+
+            const data = await response.json()
+            const requests = Array.isArray(data)
+              ? data
+              : Array.isArray(data.requests)
+                ? data.requests
+                : []
+
+            return {
+              team,
+              requests: requests.map(request => ({
+                ...request,
+                team_id: team.id,
+                team_name: team.name
+              }))
+            }
+          } catch (error) {
+            console.error(
+              `Error loading approvals for ${team.name}:`,
+              error.message
+            )
+            return null
+          }
+        })
+      )
+
+      const validResults = results.filter(Boolean)
+      const newAdminTeams = validResults.map(result => result.team)
+
+      const allPending = validResults.flatMap(result =>
+        result.requests.filter(request =>
+          !request.status || request.status === 'pending'
+        )
+      )
+
+      const newIds = new Set(
+        allPending.map(request => String(request.id))
+      )
+
+      // Don't show a "new request" notification for requests that
+      // were already pending when the page was first opened.
+      if (previousRequestIds.current !== null) {
+        const newlyArrived = allPending.filter(
+          request => !previousRequestIds.current.has(String(request.id))
+        )
+
+        if (newlyArrived.length > 0) {
+          const first = newlyArrived[0]
+
+          setNotification(
+            newlyArrived.length === 1
+              ? `New join request for ${first.team_name}.`
+              : `${newlyArrived.length} new team join requests received.`
+          )
+        }
+      }
+
+      previousRequestIds.current = newIds
+      setAdminTeams(newAdminTeams)
+      setPendingRequests(allPending)
+      setApprovalError('')
+    } catch (error) {
+      console.error('Error loading approvals:', error.message)
+      setApprovalError(error.message)
+    }
+  }, [getAccessToken])
+
+  // Approve or reject a request using the existing backend route
+  async function handleRequest(request, status) {
+    const requestKey = String(request.id)
+
+    setActingOnRequest(requestKey)
+    setApprovalError('')
+
+    try {
+      await apiFetch(`/join-requests/${request.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status })
+      })
+
+      setPendingRequests(previous =>
+        previous.filter(item => String(item.id) !== requestKey)
+      )
+
+      setNotification(
+        status === 'approved'
+          ? `Approved ${request.email || request.user_email || 'the user'} for ${request.team_name}.`
+          : `Rejected the join request for ${request.team_name}.`
+      )
+
+      // Reload to get the authoritative backend state.
+      await loadApprovals()
+      await loadDashboard()
+    } catch (error) {
+      console.error('Approval action failed:', error.message)
+      setApprovalError(error.message)
+    } finally {
+      setActingOnRequest(null)
+    }
+  }
+
+  // Initial load and automatic notification polling
   useEffect(() => {
     loadUser()
     loadDashboard()
+    loadApprovals()
+    loadMessageCount()
 
-    let isMounted = true
+    const approvalInterval = setInterval(() => {
+      loadApprovals()
+    }, 15000)
 
     const channel = supabase
       .channel('dashboard-messages-count')
@@ -172,36 +332,26 @@ setMessageCount(messagesData.count ?? 0)
         {
           event: '*',
           schema: 'public',
-          table: 'messages',
+          table: 'messages'
         },
-        async () => {
-          if (isMounted) {
-            await loadMessageCount()
-          }
+        () => {
+          loadMessageCount()
         }
       )
-      .subscribe((status, error) => {
-        console.log('Messages realtime status:', status)
-
-        if (error) {
-          console.error('Messages realtime error:', error)
-        }
-      })
+      .subscribe()
 
     return () => {
-      isMounted = false
+      clearInterval(approvalInterval)
       supabase.removeChannel(channel)
     }
-  }, [loadUser, loadDashboard, loadMessageCount])
+  }, [loadUser, loadDashboard, loadApprovals, loadMessageCount])
 
-  // Count active tasks
   const activeTasks = tasks.filter(
     task =>
       task.status === 'todo' ||
       task.status === 'in_progress'
   ).length
 
-  // Show the 5 latest tasks first
   const recentTasks = [...tasks]
     .sort((a, b) => {
       const dateA = a.created_at
@@ -228,23 +378,204 @@ setMessageCount(messagesData.count ?? 0)
     return 'To Do'
   }
 
+  const getRequesterName = request =>
+    request.name ||
+    request.user_name ||
+    request.full_name ||
+    request.email ||
+    request.user_email ||
+    'User'
+
+  const getRequesterEmail = request =>
+    request.email ||
+    request.user_email ||
+    request.requester_email ||
+    ''
+
   return (
     <div className="dashboard-content">
-      {/* Dashboard header */}
       <header className="dashboard-header">
         <div>
           <h1>Good morning, {userName} 👋</h1>
           <p>Here's what's happening with your teams today.</p>
         </div>
 
-        <button
-          className="create-button"
-          onClick={loadDashboard}
-          disabled={loading}
-        >
-          {loading ? 'Refreshing...' : '↻ Refresh'}
-        </button>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          {adminTeams.length > 0 && (
+            <button
+              type="button"
+              className="create-button"
+              onClick={() => {
+                setShowApprovals(previous => !previous)
+                setNotification('')
+              }}
+              style={{ position: 'relative' }}
+            >
+              🔔 Approvals
+              {pendingRequests.length > 0 && (
+                <span
+                  style={{
+                    marginLeft: 8,
+                    padding: '3px 8px',
+                    borderRadius: 20,
+                    background: '#dc2626',
+                    color: '#fff',
+                    fontSize: 12,
+                    fontWeight: 700
+                  }}
+                >
+                  {pendingRequests.length}
+                </span>
+              )}
+            </button>
+          )}
+
+          <button
+            type="button"
+            className="create-button"
+            onClick={() => {
+              loadDashboard()
+              loadApprovals()
+            }}
+            disabled={loading}
+          >
+            {loading ? 'Refreshing...' : '↻ Refresh'}
+          </button>
+        </div>
       </header>
+
+      {/* In-app notification for admins */}
+      {notification && adminTeams.length > 0 && (
+        <div
+          role="status"
+          style={{
+            marginBottom: 20,
+            padding: '14px 18px',
+            borderRadius: 12,
+            border: '1px solid #bfdbfe',
+            background: '#eff6ff',
+            color: '#1e40af',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 12
+          }}
+        >
+          <span>🔔 {notification}</span>
+          <button
+            type="button"
+            onClick={() => setNotification('')}
+            aria-label="Dismiss notification"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* Admin-only approvals panel */}
+      {showApprovals && adminTeams.length > 0 && (
+        <section
+          className="dashboard-card"
+          style={{ marginBottom: 24 }}
+        >
+          <div className="card-title">
+            <div>
+              <h2>Team Join Requests</h2>
+              <p>
+                Review requests for teams you administer.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={loadApprovals}
+              disabled={approvalsLoading}
+            >
+              ↻ Refresh requests
+            </button>
+          </div>
+
+          {approvalError && (
+            <p role="alert" style={{ color: '#dc2626' }}>
+              {approvalError}
+            </p>
+          )}
+
+          {pendingRequests.length === 0 ? (
+            <p style={{ padding: '16px 0', color: '#64748b' }}>
+              No pending join requests.
+            </p>
+          ) : (
+            <div style={{ display: 'grid', gap: 12 }}>
+              {pendingRequests.map(request => (
+                <article
+                  key={`${request.team_id}-${request.id}`}
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    gap: 16,
+                    flexWrap: 'wrap',
+                    padding: 16,
+                    border: '1px solid #e2e8f0',
+                    borderRadius: 12
+                  }}
+                >
+                  <div>
+                    <h3 style={{ margin: '0 0 5px' }}>
+                      {getRequesterName(request)}
+                    </h3>
+
+                    <p style={{ margin: '0 0 5px', color: '#64748b' }}>
+                      {getRequesterEmail(request)}
+                    </p>
+
+                    <small style={{ color: '#64748b' }}>
+                      Requested to join: <strong>{request.team_name}</strong>
+                    </small>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button
+                      type="button"
+                      disabled={actingOnRequest === String(request.id)}
+                      onClick={() => handleRequest(request, 'approved')}
+                      style={{
+                        background: '#15803d',
+                        color: '#fff',
+                        border: 0,
+                        borderRadius: 8,
+                        padding: '10px 14px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {actingOnRequest === String(request.id)
+                        ? 'Processing...'
+                        : '✓ Approve'}
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={actingOnRequest === String(request.id)}
+                      onClick={() => handleRequest(request, 'rejected')}
+                      style={{
+                        background: '#dc2626',
+                        color: '#fff',
+                        border: 0,
+                        borderRadius: 8,
+                        padding: '10px 14px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      ✕ Reject
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
 
       {/* Statistics */}
       <section className="stats">
@@ -281,7 +612,11 @@ setMessageCount(messagesData.count ?? 0)
               </p>
             </div>
 
-            <button onClick={loadDashboard} disabled={loading}>
+            <button
+              type="button"
+              onClick={loadDashboard}
+              disabled={loading}
+            >
               {loading ? 'Refreshing...' : '↻ Refresh'}
             </button>
           </div>
@@ -326,10 +661,7 @@ setMessageCount(messagesData.count ?? 0)
                     className="show-more-teams"
                     onClick={() =>
                       setVisibleTeamsCount(previousCount =>
-                        Math.min(
-                          previousCount + 5,
-                          teams.length
-                        )
+                        Math.min(previousCount + 5, teams.length)
                       )
                     }
                   >
@@ -348,11 +680,8 @@ setMessageCount(messagesData.count ?? 0)
                 )}
 
                 <p>
-                  Showing {Math.min(
-                    visibleTeamsCount,
-                    teams.length
-                  )}{' '}
-                  of {teams.length} teams
+                  Showing {Math.min(visibleTeamsCount, teams.length)} of{' '}
+                  {teams.length} teams
                 </p>
               </div>
             </>
@@ -369,7 +698,11 @@ setMessageCount(messagesData.count ?? 0)
               </p>
             </div>
 
-            <button onClick={loadDashboard} disabled={loading}>
+            <button
+              type="button"
+              onClick={loadDashboard}
+              disabled={loading}
+            >
               {loading ? 'Refreshing...' : '↻ Refresh'}
             </button>
           </div>
@@ -384,9 +717,7 @@ setMessageCount(messagesData.count ?? 0)
                   <p>Team task</p>
                 </div>
 
-                <span
-                  className={`status ${getStatusClass(task.status)}`}
-                >
+                <span className={`status ${getStatusClass(task.status)}`}>
                   {getStatusText(task.status)}
                 </span>
               </div>
