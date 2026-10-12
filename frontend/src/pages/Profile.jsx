@@ -1,5 +1,5 @@
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../supabase'
 import Sidebar from '../components/Sidebar'
@@ -18,11 +18,7 @@ function Profile() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
-  useEffect(() => {
-    loadProfile()
-  }, [])
-
-  async function loadProfile() {
+  const loadProfile = useCallback(async () => {
     try {
       const {
         data: { user },
@@ -30,40 +26,51 @@ function Profile() {
       } = await supabase.auth.getUser()
 
       if (userError || !user) {
-        navigate('/login')
+        navigate('/login', { replace: true })
         return
       }
 
-      // Find the profile belonging to this authenticated user.
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, name, email, role, user_id')
+        .select('name, email')
         .eq('user_id', user.id)
         .maybeSingle()
 
       if (error) {
-        console.error('Profile lookup error:', error)
         throw error
       }
 
       const currentName =
-        data?.name ||
-        user.user_metadata?.name ||
-        user.email.split('@')[0]
+        data?.name?.trim() ||
+        user.user_metadata?.name?.trim() ||
+        user.email?.split('@')[0] ||
+        'User'
 
-      setProfile({
+      const currentProfile = {
         name: currentName,
-        email: user.email
-      })
+        email: data?.email || user.email || ''
+      }
 
+      setProfile(currentProfile)
       setName(currentName)
+
+      // Keep the sidebar in sync with the saved profile.
+      window.dispatchEvent(
+        new CustomEvent('profile-updated', {
+          detail: { name: currentName }
+        })
+      )
     } catch (error) {
       console.error('Unable to load profile:', error)
       alert('Unable to load your profile: ' + error.message)
     } finally {
       setLoading(false)
     }
-  }
+  }, [navigate])
+
+  useEffect(() => {
+    loadProfile()
+  }, [loadProfile])
 
   async function handleSave() {
     const trimmedName = name.trim()
@@ -82,11 +89,11 @@ function Profile() {
       } = await supabase.auth.getUser()
 
       if (userError || !user) {
-        navigate('/login')
+        navigate('/login', { replace: true })
         return
       }
 
-      // Update the display name in Supabase Auth.
+      // Save the name in Supabase Auth metadata.
       const { error: authError } = await supabase.auth.updateUser({
         data: {
           ...user.user_metadata,
@@ -100,12 +107,13 @@ function Profile() {
         )
       }
 
-      // Check whether this user already has a profile row.
-      const { data: existingProfile, error: lookupError } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('user_id', user.id)
-        .maybeSingle()
+      // Check whether a profile row already exists for this user.
+      const { data: existingProfile, error: lookupError } =
+        await supabase
+          .from('profiles')
+          .select('user_id')
+          .eq('user_id', user.id)
+          .maybeSingle()
 
       if (lookupError) {
         throw new Error(
@@ -114,20 +122,20 @@ function Profile() {
       }
 
       if (existingProfile) {
-        // Update the existing profile.
         const { error: updateError } = await supabase
           .from('profiles')
-          .update({ name: trimmedName })
+          .update({
+            name: trimmedName,
+            email: user.email
+          })
           .eq('user_id', user.id)
 
         if (updateError) {
           throw new Error(
-            'Account name updated, but profile update failed: ' +
-            updateError.message
+            'Unable to update profile: ' + updateError.message
           )
         }
       } else {
-        // Create a profile only for the currently authenticated user.
         const { error: insertError } = await supabase
           .from('profiles')
           .insert({
@@ -139,19 +147,27 @@ function Profile() {
 
         if (insertError) {
           throw new Error(
-            'Account name updated, but the profile could not be created. ' +
-            'Supabase may be blocking the insert through Row Level Security (RLS). ' +
-            insertError.message
+            'Unable to create profile: ' + insertError.message
           )
         }
       }
 
-      setProfile({
+      const updatedProfile = {
         name: trimmedName,
-        email: user.email
-      })
+        email: user.email || ''
+      }
 
+      setProfile(updatedProfile)
+      setName(trimmedName)
       setEditing(false)
+
+      // Immediately update the sidebar name and avatar.
+      window.dispatchEvent(
+        new CustomEvent('profile-updated', {
+          detail: { name: trimmedName }
+        })
+      )
+
       alert('Profile updated successfully!')
     } catch (error) {
       console.error('Save profile error:', error)

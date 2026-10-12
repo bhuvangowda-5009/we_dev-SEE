@@ -66,11 +66,7 @@ async function getProfileForUser(user) {
 
   return {
     user_id: user.id,
-    name:
-      data?.name ||
-      user.user_metadata?.name ||
-      user.email ||
-      'User',
+    name: data?.name || user.user_metadata?.name || user.email || 'User',
     email: (data?.email || user.email || '').trim().toLowerCase()
   }
 }
@@ -84,7 +80,7 @@ async function getMembership(teamId, email) {
     .from('team_members')
     .select('id, team_id, email, role, status')
     .eq('team_id', Number(teamId))
-    .ilike('email', email.trim())
+    .ilike('email', String(email).trim())
     .eq('status', 'approved')
     .maybeSingle()
 
@@ -100,18 +96,15 @@ async function isTeamMember(teamId, email) {
   return Boolean(await getMembership(teamId, email))
 }
 
-async function isTeamAdmin(teamId, email) {
-  const membership = await getMembership(teamId, email)
-  return membership?.role === 'admin'
-}
-
 async function requireTeamMember(teamId, email, res) {
-  if (!Number.isInteger(Number(teamId)) || Number(teamId) <= 0) {
+  const numericTeamId = Number(teamId)
+
+  if (!Number.isInteger(numericTeamId) || numericTeamId <= 0) {
     res.status(400).json({ error: 'A valid team ID is required.' })
     return false
   }
 
-  const member = await isTeamMember(Number(teamId), email)
+  const member = await isTeamMember(numericTeamId, email)
 
   if (!member) {
     res.status(403).json({
@@ -122,6 +115,57 @@ async function requireTeamMember(teamId, email, res) {
 
   return true
 }
+
+// ==================== TEAM ADMIN CHECK ====================
+
+async function isTeamAdmin(teamId, email, userId) {
+  const numericTeamId = Number(teamId)
+
+  if (!Number.isInteger(numericTeamId) || numericTeamId <= 0) {
+    return false
+  }
+
+  const { data: team, error: teamError } = await supabase
+    .from('teams')
+    .select('id, created_by')
+    .eq('id', numericTeamId)
+    .maybeSingle()
+
+  if (teamError) {
+    console.error('Team lookup failed:', teamError.message)
+    throw new Error('Unable to verify team administrator.')
+  }
+
+  if (!team) return false
+
+  if (
+    team.created_by &&
+    userId &&
+    String(team.created_by) === String(userId)
+  ) {
+    return true
+  }
+
+  if (!email) return false
+
+  const { data: memberships, error: membershipError } = await supabase
+    .from('team_members')
+    .select('id, role, status, email')
+    .eq('team_id', numericTeamId)
+    .ilike('email', String(email).trim())
+    .eq('status', 'approved')
+
+  if (membershipError) {
+    console.error('Admin membership lookup failed:', membershipError.message)
+    throw new Error('Unable to verify team administrator.')
+  }
+
+  return (memberships || []).some(
+    member => String(member.role || '').trim().toLowerCase() === 'admin'
+  )
+}
+
+// ==================== ACCESSIBLE TEAMS ====================
 
 async function getAccessibleTeamIds(user, profile) {
   const { data: memberships, error: membershipError } = await supabase
@@ -175,9 +219,7 @@ app.get('/api/users/search', async (req, res) => {
 
     if (error) {
       console.error('User search error:', error.message)
-      return res.status(500).json({
-        error: 'Unable to search users.'
-      })
+      return res.status(500).json({ error: 'Unable to search users.' })
     }
 
     res.json(data || [])
@@ -199,20 +241,50 @@ app.get('/api/teams', async (req, res) => {
 
     if (!teamIds.length) return res.json([])
 
-    const { data, error } = await supabase
+    const { data: teams, error: teamsError } = await supabase
       .from('teams')
       .select('*')
       .in('id', teamIds)
       .order('id', { ascending: true })
 
-    if (error) {
-      console.error('Load teams error:', error.message)
+    if (teamsError) {
+      console.error('Load teams error:', teamsError.message)
+      return res.status(500).json({ error: 'Unable to load your teams.' })
+    }
+
+    const { data: memberships, error: membersError } = await supabase
+      .from('team_members')
+      .select('team_id, email, role, status')
+      .in('team_id', teamIds)
+      .eq('status', 'approved')
+
+    if (membersError) {
+      console.error('Load team permissions error:', membersError.message)
       return res.status(500).json({
-        error: 'Unable to load your teams.'
+        error: 'Unable to load team permissions.'
       })
     }
 
-    res.json(data || [])
+    const result = (teams || []).map(team => {
+      const isCreator = String(team.created_by || '') === String(user.id)
+
+      const isAdminMember = (memberships || []).some(member =>
+        Number(member.team_id) === Number(team.id) &&
+        String(member.email || '').trim().toLowerCase() === profile.email &&
+        String(member.role || '').trim().toLowerCase() === 'admin'
+      )
+
+      const isAdmin = isCreator || isAdminMember
+
+      return {
+        ...team,
+        is_admin: isAdmin,
+        isAdmin,
+        can_manage_requests: isAdmin
+      }
+    })
+
+    res.json(result)
   } catch (error) {
     console.error('Load teams error:', error.message)
     res.status(500).json({ error: 'Failed to load your teams.' })
@@ -320,8 +392,7 @@ app.post('/api/teams', async (req, res) => {
       .from('teams')
       .insert({
         name: name.trim(),
-        description:
-          typeof description === 'string' ? description.trim() : '',
+        description: typeof description === 'string' ? description.trim() : '',
         created_by: user.id,
         join_code: joinCode,
         icon: '👥',
@@ -360,7 +431,6 @@ app.post('/api/teams', async (req, res) => {
 
     if (membersError) {
       console.error('Create team members error:', membersError.message)
-
       await supabase.from('team_members').delete().eq('team_id', team.id)
       await supabase.from('teams').delete().eq('id', team.id)
 
@@ -383,7 +453,7 @@ app.post('/api/teams', async (req, res) => {
   }
 })
 
-// ==================== REQUEST TO JOIN BY CODE ====================
+// ==================== JOIN TEAM BY CODE ====================
 
 app.post('/api/teams/join', async (req, res) => {
   try {
@@ -403,9 +473,7 @@ app.post('/api/teams/join', async (req, res) => {
       .maybeSingle()
 
     if (error) {
-      return res.status(500).json({
-        error: 'Unable to check the join code.'
-      })
+      return res.status(500).json({ error: 'Unable to check the join code.' })
     }
 
     if (!team) {
@@ -473,7 +541,7 @@ app.post('/api/teams/join', async (req, res) => {
   }
 })
 
-// ==================== REQUEST TO JOIN BY TEAM ID ====================
+// ==================== JOIN TEAM BY ID ====================
 
 app.post('/api/teams/:teamId/join-request', async (req, res) => {
   try {
@@ -553,7 +621,7 @@ app.post('/api/teams/:teamId/join-request', async (req, res) => {
   }
 })
 
-// ==================== GET JOIN REQUESTS (ADMIN ONLY) ====================
+// ==================== GET JOIN REQUESTS ====================
 
 app.get('/api/teams/:teamId/join-requests', async (req, res) => {
   try {
@@ -561,9 +629,15 @@ app.get('/api/teams/:teamId/join-requests', async (req, res) => {
     if (!user) return
 
     const teamId = Number(req.params.teamId)
-    const profile = await getProfileForUser(user)
 
-    if (!(await isTeamAdmin(teamId, profile.email))) {
+    if (!Number.isInteger(teamId) || teamId <= 0) {
+      return res.status(400).json({ error: 'Invalid team ID.' })
+    }
+
+    const profile = await getProfileForUser(user)
+    const admin = await isTeamAdmin(teamId, profile.email, user.id)
+
+    if (!admin) {
       return res.status(403).json({
         error: 'Only team admins can view join requests.'
       })
@@ -577,6 +651,7 @@ app.get('/api/teams/:teamId/join-requests', async (req, res) => {
       .order('created_at', { ascending: true })
 
     if (error) {
+      console.error('Load join requests error:', error.message)
       return res.status(500).json({
         error: 'Unable to load join requests.'
       })
@@ -597,7 +672,7 @@ app.patch('/api/join-requests/:requestId', async (req, res) => {
     if (!user) return
 
     const requestId = Number(req.params.requestId)
-    const status = req.body.status
+    const status = String(req.body.status || '').toLowerCase()
 
     if (
       !Number.isInteger(requestId) ||
@@ -618,6 +693,7 @@ app.patch('/api/join-requests/:requestId', async (req, res) => {
       .maybeSingle()
 
     if (requestError) {
+      console.error('Load request error:', requestError.message)
       return res.status(500).json({
         error: 'Unable to load join request.'
       })
@@ -627,7 +703,13 @@ app.patch('/api/join-requests/:requestId', async (req, res) => {
       return res.status(404).json({ error: 'Join request not found.' })
     }
 
-    if (!(await isTeamAdmin(request.team_id, profile.email))) {
+    const admin = await isTeamAdmin(
+      request.team_id,
+      profile.email,
+      user.id
+    )
+
+    if (!admin) {
       return res.status(403).json({
         error: 'Only team admins can process requests.'
       })
@@ -636,6 +718,27 @@ app.patch('/api/join-requests/:requestId', async (req, res) => {
     if (request.status !== 'pending') {
       return res.status(409).json({
         error: 'This request has already been processed.'
+      })
+    }
+
+    const { data: updated, error: updateError } = await supabase
+      .from('join_requests')
+      .update({ status })
+      .eq('id', requestId)
+      .eq('status', 'pending')
+      .select()
+      .maybeSingle()
+
+    if (updateError) {
+      console.error('Update join request error:', updateError.message)
+      return res.status(500).json({
+        error: 'Failed to update join request.'
+      })
+    }
+
+    if (!updated) {
+      return res.status(409).json({
+        error: 'This request has already been processed. Refresh the page.'
       })
     }
 
@@ -651,48 +754,49 @@ app.patch('/api/join-requests/:requestId', async (req, res) => {
           .insert({
             team_id: request.team_id,
             name: request.name,
-            email: request.email.trim().toLowerCase(),
+            email: String(request.email || '').trim().toLowerCase(),
             role: 'member',
             status: 'approved'
           })
 
         if (memberError) {
           console.error('Approve member error:', memberError.message)
+
+          await supabase
+            .from('join_requests')
+            .update({ status: 'pending' })
+            .eq('id', requestId)
+            .eq('status', 'approved')
+
           return res.status(500).json({
-            error: 'Could not approve this member.'
+            error: 'Could not add this member. Check the backend logs.'
           })
         }
+      }
 
-        const { data: members, error: countError } = await supabase
-          .from('team_members')
-          .select('id')
-          .eq('team_id', request.team_id)
-          .eq('status', 'approved')
+      const { data: members, error: countError } = await supabase
+        .from('team_members')
+        .select('id')
+        .eq('team_id', request.team_id)
+        .eq('status', 'approved')
 
-        if (!countError) {
-          await supabase
-            .from('teams')
-            .update({ members: (members || []).length })
-            .eq('id', request.team_id)
+      if (countError) {
+        console.error('Member count error:', countError.message)
+      } else {
+        const { error: teamUpdateError } = await supabase
+          .from('teams')
+          .update({ members: (members || []).length })
+          .eq('id', request.team_id)
+
+        if (teamUpdateError) {
+          console.error('Team count update error:', teamUpdateError.message)
         }
       }
     }
 
-    const { data: updated, error: updateError } = await supabase
-      .from('join_requests')
-      .update({ status })
-      .eq('id', requestId)
-      .eq('status', 'pending')
-      .select('id')
-      .maybeSingle()
-
-    if (updateError || !updated) {
-      return res.status(500).json({
-        error: 'Failed to update join request.'
-      })
-    }
-
     res.json({
+      success: true,
+      status,
       message: status === 'approved'
         ? 'User approved successfully.'
         : 'Join request rejected.'
@@ -760,12 +864,14 @@ app.get('/api/teams/:teamId/members', async (req, res) => {
       })
     }
 
-    res.json((data || []).map(member => ({
-      ...member,
-      is_leader:
-        Boolean(leaderEmail) &&
-        (member.email || '').trim().toLowerCase() === leaderEmail
-    })))
+    res.json(
+      (data || []).map(member => ({
+        ...member,
+        is_leader:
+          Boolean(leaderEmail) &&
+          (member.email || '').trim().toLowerCase() === leaderEmail
+      }))
+    )
   } catch (error) {
     console.error('Load members error:', error.message)
     res.status(500).json({
@@ -856,8 +962,7 @@ app.post('/api/tasks', async (req, res) => {
       .from('tasks')
       .insert({
         title: title.trim(),
-        description:
-          typeof description === 'string' ? description.trim() : '',
+        description: typeof description === 'string' ? description.trim() : '',
         status: taskStatus,
         team_id: teamId
       })
@@ -931,6 +1036,7 @@ app.put('/api/tasks/:id', async (req, res) => {
       .single()
 
     if (error) {
+      console.error('Update task error:', error.message)
       return res.status(500).json({ error: 'Failed to update task.' })
     }
 
@@ -1056,9 +1162,67 @@ app.post('/api/messages', async (req, res) => {
   }
 })
 
-// ==================== TEAM FILES ====================
+// ==================== DASHBOARD FILE COUNT ====================
+// Files are stored in the `files` bucket under <teamId>/<filename>.
+// Count files only for teams accessible to the authenticated user.
 
-// List files belonging to an approved team.
+app.get('/api/files/count', async (req, res) => {
+  try {
+    const user = await requireUser(req, res)
+    if (!user) return
+
+    const profile = await getProfileForUser(user)
+    const teamIds = await getAccessibleTeamIds(user, profile)
+
+    let totalFiles = 0
+
+    for (const teamId of teamIds) {
+      let offset = 0
+      const limit = 1000
+
+      while (true) {
+        const { data, error } = await supabase.storage
+          .from('files')
+          .list(String(teamId), {
+            limit,
+            offset,
+            sortBy: { column: 'name', order: 'asc' }
+          })
+
+        if (error) {
+          console.error(
+            `Dashboard file count failed for team ${teamId}:`,
+            error.message
+          )
+
+          return res.status(500).json({
+            error: 'Unable to count team files.'
+          })
+        }
+
+        const entries = data || []
+
+        totalFiles += entries.filter(
+          file => file.name && file.id
+        ).length
+
+        if (entries.length < limit) break
+
+        offset += limit
+      }
+    }
+
+    res.json({ count: totalFiles })
+  } catch (error) {
+    console.error('Dashboard file count error:', error.message)
+    res.status(500).json({
+      error: 'Failed to count dashboard files.'
+    })
+  }
+})
+
+// ==================== LIST TEAM FILES ====================
+
 app.get('/api/files', async (req, res) => {
   try {
     const user = await requireUser(req, res)
@@ -1083,22 +1247,23 @@ app.get('/api/files', async (req, res) => {
       })
     }
 
-    const result = (data || [])
-      .filter(file => file.name && file.id)
-      .map(file => ({
-        name: file.name,
-        size: file.metadata?.size || 0,
-        created_at: file.created_at
-      }))
-
-    res.json(result)
+    res.json(
+      (data || [])
+        .filter(file => file.name && file.id)
+        .map(file => ({
+          name: file.name,
+          size: file.metadata?.size || 0,
+          created_at: file.created_at
+        }))
+    )
   } catch (error) {
     console.error('List files error:', error.message)
     res.status(500).json({ error: 'Failed to load files.' })
   }
 })
 
-// Upload a file to an approved team's folder.
+// ==================== UPLOAD TEAM FILE ====================
+
 app.post(
   '/api/files',
   express.raw({
@@ -1117,9 +1282,7 @@ app.post(
       if (!(await requireTeamMember(teamId, profile.email, res))) return
 
       if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
-        return res.status(400).json({
-          error: 'Choose a file to upload.'
-        })
+        return res.status(400).json({ error: 'Choose a file to upload.' })
       }
 
       if (req.body.length > 25 * 1024 * 1024) {
@@ -1165,7 +1328,8 @@ app.post(
   }
 )
 
-// Download a file only after verifying team membership.
+// ==================== DOWNLOAD TEAM FILE ====================
+
 app.get('/api/files/:teamId/:fileName', async (req, res) => {
   try {
     const user = await requireUser(req, res)

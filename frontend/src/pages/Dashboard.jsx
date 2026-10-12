@@ -1,4 +1,3 @@
-
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { supabase } from '../supabase'
 import '../css/dashboard.css'
@@ -20,7 +19,6 @@ function Dashboard() {
   const [userName, setUserName] = useState('User')
   const [visibleTeamsCount, setVisibleTeamsCount] = useState(5)
 
-  // Approval and notification state
   const [adminTeams, setAdminTeams] = useState([])
   const [pendingRequests, setPendingRequests] = useState([])
   const [showApprovals, setShowApprovals] = useState(false)
@@ -29,9 +27,8 @@ function Dashboard() {
   const [notification, setNotification] = useState('')
   const [approvalError, setApprovalError] = useState('')
 
-  // Used to distinguish new requests from requests already present
-  // when the Dashboard first loads.
   const previousRequestIds = useRef(null)
+  const approvalRequestRunning = useRef(false)
 
   const getAccessToken = useCallback(async () => {
     const {
@@ -55,21 +52,22 @@ function Dashboard() {
       ...options,
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-        ...options.headers
+        ...options.headers,
+        Authorization: `Bearer ${token}`
       }
     })
 
     const data = await response.json().catch(() => ({}))
 
     if (!response.ok) {
-      throw new Error(data.error || `Request failed: ${response.status}`)
+      throw new Error(
+        data.error || `Request failed: HTTP ${response.status}`
+      )
     }
 
     return data
   }, [getAccessToken])
 
-  // Load the logged-in user's name
   const loadUser = useCallback(async () => {
     try {
       const {
@@ -92,82 +90,93 @@ function Dashboard() {
     }
   }, [])
 
-  // Load message count
   const loadMessageCount = useCallback(async () => {
     try {
-      const { count, error } = await supabase
-        .from('messages')
-        .select('*', { count: 'exact', head: true })
+      const token = await getAccessToken()
 
-      if (error) {
-        console.error('Message count error:', error.message)
-        return
+      const response = await fetch(`${API_URL}/messages/count`, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      })
+
+      if (!response.ok) {
+        throw new Error('Unable to load message count.')
       }
 
-      setMessageCount(count ?? 0)
+      const data = await response.json()
+      setMessageCount(Number(data.count) || 0)
     } catch (error) {
-      console.error('Unexpected message count error:', error.message)
+      console.error('Message count error:', error.message)
     }
-  }, [])
+  }, [getAccessToken])
 
-  // Load teams, tasks, messages and files
   const loadDashboard = useCallback(async () => {
     setLoading(true)
 
     try {
+      const token = await getAccessToken()
+
       const headers = {
-        Authorization: `Bearer ${await getAccessToken()}`
+        Authorization: `Bearer ${token}`
       }
 
-      const teamsResponse = await fetch(`${API_URL}/teams`, { headers })
+      const [
+        teamsResponse,
+        tasksResponse,
+        messagesResponse,
+        filesResponse
+      ] = await Promise.all([
+        fetch(`${API_URL}/teams`, { headers }),
+        fetch(`${API_URL}/tasks`, { headers }),
+        fetch(`${API_URL}/messages/count`, { headers }),
+        fetch(`${API_URL}/files/count`, { headers })
+      ])
 
       if (!teamsResponse.ok) {
-        throw new Error(`Failed to load teams: HTTP ${teamsResponse.status}`)
+        throw new Error(
+          `Failed to load teams: HTTP ${teamsResponse.status}`
+        )
+      }
+
+      if (!tasksResponse.ok) {
+        throw new Error(
+          `Failed to load tasks: HTTP ${tasksResponse.status}`
+        )
+      }
+
+      if (!messagesResponse.ok) {
+        throw new Error(
+          `Failed to load messages: HTTP ${messagesResponse.status}`
+        )
+      }
+
+      if (!filesResponse.ok) {
+        const errorData = await filesResponse.json().catch(() => ({}))
+
+        throw new Error(
+          errorData.error ||
+          `Unable to load file count: HTTP ${filesResponse.status}`
+        )
       }
 
       const teamsData = await teamsResponse.json()
+      const tasksData = await tasksResponse.json()
+      const messagesData = await messagesResponse.json()
+      const filesData = await filesResponse.json()
 
       if (!Array.isArray(teamsData)) {
         throw new Error('Teams API did not return an array.')
       }
 
-      setTeams(teamsData)
-
-      const tasksResponse = await fetch(`${API_URL}/tasks`, { headers })
-
-      if (!tasksResponse.ok) {
-        throw new Error(`Failed to load tasks: HTTP ${tasksResponse.status}`)
-      }
-
-      const tasksData = await tasksResponse.json()
-
       if (!Array.isArray(tasksData)) {
         throw new Error('Tasks API did not return an array.')
       }
 
+      setTeams(teamsData)
       setTasks(tasksData)
-
-      const messagesResponse = await fetch(
-        `${API_URL}/messages/count`,
-        { headers }
-      )
-
-      if (messagesResponse.ok) {
-        const messagesData = await messagesResponse.json()
-        setMessageCount(messagesData.count ?? 0)
-      } else {
-        console.error('Unable to load message count.')
-      }
-
-      const { data: files, error: fileError } = await supabase.storage
-        .from('files')
-        .list('', { limit: 1000 })
-
-      if (fileError) {
-        console.error('Error loading files:', fileError.message)
-      } else {
-        setFileCount(files?.length ?? 0)
-      }
+      setMessageCount(Number(messagesData.count) || 0)
+      setFileCount(Number(filesData.count) || 0)
     } catch (error) {
       console.error('Error loading dashboard:', error.message)
     } finally {
@@ -175,76 +184,127 @@ function Dashboard() {
     }
   }, [getAccessToken])
 
-  // Find which teams the current user administers and load their
-  // pending join requests. Non-admin teams are ignored.
   const loadApprovals = useCallback(async () => {
+    if (approvalRequestRunning.current) return
+
+    approvalRequestRunning.current = true
+    setApprovalsLoading(true)
+
     try {
       const token = await getAccessToken()
+
       const headers = {
         Authorization: `Bearer ${token}`
       }
 
       const teamsResponse = await fetch(`${API_URL}/teams`, { headers })
 
+      if (teamsResponse.status === 401) {
+        throw new Error('Your session has expired. Please log in again.')
+      }
+
       if (!teamsResponse.ok) {
-        throw new Error('Unable to check team approval requests.')
+        throw new Error(
+          `Unable to load teams for approvals: HTTP ${teamsResponse.status}`
+        )
       }
 
       const allTeams = await teamsResponse.json()
 
-      if (!Array.isArray(allTeams)) return
+      if (!Array.isArray(allTeams)) {
+        throw new Error('Teams API did not return an array.')
+      }
+
+      const {
+        data: { user },
+        error: userError
+      } = await supabase.auth.getUser()
+
+      if (userError) throw userError
+
+      const manageableTeams = allTeams.filter(team => {
+        const explicitlyAdmin =
+          team.is_admin === true ||
+          team.isAdmin === true ||
+          team.can_manage_requests === true
+
+        const creatorMatches =
+          team.created_by &&
+          user?.id &&
+          String(team.created_by).toLowerCase() ===
+            String(user.id).toLowerCase()
+
+        return explicitlyAdmin || Boolean(creatorMatches)
+      })
+
+      setAdminTeams(manageableTeams)
+
+      if (manageableTeams.length === 0) {
+        setPendingRequests([])
+        previousRequestIds.current = new Set()
+        setApprovalError('')
+        return
+      }
 
       const results = await Promise.all(
-        allTeams.map(async team => {
-          try {
-            const response = await fetch(
-              `${API_URL}/teams/${team.id}/join-requests`,
-              { headers }
+        manageableTeams.map(async team => {
+          const response = await fetch(
+            `${API_URL}/teams/${team.id}/join-requests`,
+            { headers }
+          )
+
+          if (response.status === 401) {
+            throw new Error(
+              'Your session has expired. Please log in again.'
+            )
+          }
+
+          if (response.status === 403) {
+            console.warn(
+              `Backend denied approval access for team "${team.name}".`
             )
 
-            // The backend returns a forbidden response when the user
-            // is not an admin of this team.
-            if (response.status === 403) return null
+            return { team, requests: [], forbidden: true }
+          }
 
-            if (!response.ok) {
-              console.error(
-                `Could not load requests for ${team.name}:`,
-                response.status
-              )
-              return null
-            }
-
-            const data = await response.json()
-            const requests = Array.isArray(data)
-              ? data
-              : Array.isArray(data.requests)
-                ? data.requests
-                : []
-
-            return {
-              team,
-              requests: requests.map(request => ({
-                ...request,
-                team_id: team.id,
-                team_name: team.name
-              }))
-            }
-          } catch (error) {
+          if (!response.ok) {
             console.error(
-              `Error loading approvals for ${team.name}:`,
-              error.message
+              `Could not load join requests for "${team.name}":`,
+              response.status
             )
-            return null
+
+            return { team, requests: [], forbidden: false }
+          }
+
+          const data = await response.json()
+
+          const requests = Array.isArray(data)
+            ? data
+            : Array.isArray(data.requests)
+              ? data.requests
+              : []
+
+          return {
+            team,
+            forbidden: false,
+            requests: requests.map(request => ({
+              ...request,
+              team_id: team.id,
+              team_name: team.name
+            }))
           }
         })
       )
 
-      const validResults = results.filter(Boolean)
-      const newAdminTeams = validResults.map(result => result.team)
+      const authorizedResults = results.filter(
+        result => !result.forbidden
+      )
 
-      const allPending = validResults.flatMap(result =>
-        result.requests.filter(request =>
-          !request.status || request.status === 'pending'
+      setAdminTeams(authorizedResults.map(result => result.team))
+
+      const allPending = authorizedResults.flatMap(result =>
+        result.requests.filter(
+          request => !request.status || request.status === 'pending'
         )
       )
 
@@ -252,11 +312,10 @@ function Dashboard() {
         allPending.map(request => String(request.id))
       )
 
-      // Don't show a "new request" notification for requests that
-      // were already pending when the page was first opened.
       if (previousRequestIds.current !== null) {
         const newlyArrived = allPending.filter(
-          request => !previousRequestIds.current.has(String(request.id))
+          request =>
+            !previousRequestIds.current.has(String(request.id))
         )
 
         if (newlyArrived.length > 0) {
@@ -271,16 +330,17 @@ function Dashboard() {
       }
 
       previousRequestIds.current = newIds
-      setAdminTeams(newAdminTeams)
       setPendingRequests(allPending)
       setApprovalError('')
     } catch (error) {
       console.error('Error loading approvals:', error.message)
       setApprovalError(error.message)
+    } finally {
+      approvalRequestRunning.current = false
+      setApprovalsLoading(false)
     }
   }, [getAccessToken])
 
-  // Approve or reject a request using the existing backend route
   async function handleRequest(request, status) {
     const requestKey = String(request.id)
 
@@ -299,13 +359,15 @@ function Dashboard() {
 
       setNotification(
         status === 'approved'
-          ? `Approved ${request.email || request.user_email || 'the user'} for ${request.team_name}.`
+          ? `Approved ${
+              request.email ||
+              request.user_email ||
+              'the user'
+            } for ${request.team_name}.`
           : `Rejected the join request for ${request.team_name}.`
       )
 
-      // Reload to get the authoritative backend state.
-      await loadApprovals()
-      await loadDashboard()
+      await Promise.all([loadApprovals(), loadDashboard()])
     } catch (error) {
       console.error('Approval action failed:', error.message)
       setApprovalError(error.message)
@@ -314,16 +376,13 @@ function Dashboard() {
     }
   }
 
-  // Initial load and automatic notification polling
   useEffect(() => {
     loadUser()
     loadDashboard()
     loadApprovals()
     loadMessageCount()
 
-    const approvalInterval = setInterval(() => {
-      loadApprovals()
-    }, 15000)
+    const approvalInterval = setInterval(loadApprovals, 15000)
 
     const channel = supabase
       .channel('dashboard-messages-count')
@@ -334,9 +393,7 @@ function Dashboard() {
           schema: 'public',
           table: 'messages'
         },
-        () => {
-          loadMessageCount()
-        }
+        loadMessageCount
       )
       .subscribe()
 
@@ -347,9 +404,7 @@ function Dashboard() {
   }, [loadUser, loadDashboard, loadApprovals, loadMessageCount])
 
   const activeTasks = tasks.filter(
-    task =>
-      task.status === 'todo' ||
-      task.status === 'in_progress'
+    task => task.status === 'todo' || task.status === 'in_progress'
   ).length
 
   const recentTasks = [...tasks]
@@ -444,7 +499,6 @@ function Dashboard() {
         </div>
       </header>
 
-      {/* In-app notification for admins */}
       {notification && adminTeams.length > 0 && (
         <div
           role="status"
@@ -472,18 +526,12 @@ function Dashboard() {
         </div>
       )}
 
-      {/* Admin-only approvals panel */}
       {showApprovals && adminTeams.length > 0 && (
-        <section
-          className="dashboard-card"
-          style={{ marginBottom: 24 }}
-        >
+        <section className="dashboard-card" style={{ marginBottom: 24 }}>
           <div className="card-title">
             <div>
               <h2>Team Join Requests</h2>
-              <p>
-                Review requests for teams you administer.
-              </p>
+              <p>Review requests for teams you administer.</p>
             </div>
 
             <button
@@ -491,7 +539,7 @@ function Dashboard() {
               onClick={loadApprovals}
               disabled={approvalsLoading}
             >
-              ↻ Refresh requests
+              {approvalsLoading ? 'Loading...' : '↻ Refresh requests'}
             </button>
           </div>
 
@@ -577,7 +625,6 @@ function Dashboard() {
         </section>
       )}
 
-      {/* Statistics */}
       <section className="stats">
         <div className="stat-card">
           <h2>{teams.length}</h2>
@@ -600,16 +647,12 @@ function Dashboard() {
         </div>
       </section>
 
-      {/* Main dashboard panels */}
       <section className="dashboard-grid">
-        {/* My Teams */}
         <div className="dashboard-card">
           <div className="card-title">
             <div>
               <h2>My Teams</h2>
-              <p className="teams-count">
-                {teams.length} teams in total
-              </p>
+              <p className="teams-count">{teams.length} teams in total</p>
             </div>
 
             <button
@@ -660,8 +703,8 @@ function Dashboard() {
                     type="button"
                     className="show-more-teams"
                     onClick={() =>
-                      setVisibleTeamsCount(previousCount =>
-                        Math.min(previousCount + 5, teams.length)
+                      setVisibleTeamsCount(previous =>
+                        Math.min(previous + 5, teams.length)
                       )
                     }
                   >
@@ -688,7 +731,6 @@ function Dashboard() {
           )}
         </div>
 
-        {/* Recent Tasks */}
         <div className="dashboard-card">
           <div className="card-title">
             <div>
