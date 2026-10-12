@@ -1374,6 +1374,11 @@ app.get('/api/files/:teamId/:fileName', async (req, res) => {
 
 // ==================== START SERVER ====================
 
-app.listen(PORT, () => {
-  console.log(`TeamHub backend running on http://localhost:${PORT}`)
-})
+export default app
+
+if (!process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log(`TeamHub backend running on http://localhost:${PORT}`)
+  })
+}
+
