@@ -1,0 +1,195 @@
+
+/* Main profile photo section */
+.profile-avatar-section {
+  width: 100%;
+  margin: 14px 0 22px;
+  padding: 14px 0 20px;
+  color: #111827;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+/* Photo, details and Edit Photo button */
+.profile-avatar-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* Circular profile photo - 56 x 56 px */
+.profile-avatar-circle {
+  width: 56px;
+  height: 56px;
+  min-width: 56px;
+  border-radius: 50%;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f3f4f6;
+  border: 2px solid #e5e7eb;
+}
+
+.profile-avatar-circle img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.profile-avatar-circle > span {
+  font-size: 28px;
+  line-height: 1;
+}
+
+/* Profile photo text */
+.profile-avatar-details {
+  flex: 1;
+  min-width: 120px;
+}
+
+.profile-avatar-details h3 {
+  margin: 0 0 4px;
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.profile-avatar-details p {
+  margin: 0;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+/* Edit Photo button */
+.profile-avatar-edit {
+  padding: 8px 14px;
+  border: 1px solid #c7d2fe;
+  border-radius: 8px;
+  background: #eef2ff;
+  color: #3730a3;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.2s;
+}
+
+.profile-avatar-edit:hover {
+  background: #e0e7ff;
+  transform: translateY(-1px);
+}
+
+/* Photo editor panel */
+.profile-avatar-editor {
+  margin-top: 16px;
+  padding: 16px;
+  border-radius: 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+}
+
+/* Upload Photo button */
+.profile-upload-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 9px 15px;
+  border-radius: 8px;
+  background: #2563eb;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.2s;
+}
+
+.profile-upload-button:hover {
+  background: #1d4ed8;
+  transform: translateY(-1px);
+}
+
+/* Choose avatar text */
+.profile-avatar-subtitle {
+  margin: 16px 0 10px;
+  font-size: 13px;
+  color: #64748b;
+}
+
+/* Emoji avatar layout */
+.profile-avatar-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* Individual emoji buttons */
+.profile-avatar-preset {
+  width: 36px;
+  height: 36px;
+  border: 1px solid #d1d5db;
+  border-radius: 9px;
+  background: #fff;
+  font-size: 20px;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.profile-avatar-preset:hover {
+  background: #eff6ff;
+  border-color: #93c5fd;
+}
+
+/* Selected emoji */
+.profile-avatar-preset.selected {
+  border: 2px solid #2563eb;
+  background: #dbeafe;
+}
+
+/* Status messages */
+.profile-avatar-message {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: #15803d;
+  overflow-wrap: anywhere;
+}
+
+.profile-avatar-loading {
+  margin: 12px 0;
+  color: #6b7280;
+  font-size: 13px;
+}
+
+/* Disabled controls */
+.profile-avatar-section button:disabled,
+.profile-avatar-section input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Mobile responsive design */
+@media (max-width: 480px) {
+  .profile-avatar-row {
+    gap: 9px;
+  }
+
+  .profile-avatar-circle {
+    width: 50px;
+    height: 50px;
+    min-width: 50px;
+  }
+
+  .profile-avatar-circle > span {
+    font-size: 25px;
+  }
+
+  .profile-avatar-details {
+    min-width: 100px;
+  }
+
+  .profile-avatar-edit {
+    padding: 7px 10px;
+  }
+
+  .profile-avatar-editor {
+    padding: 12px;
+  }
+}

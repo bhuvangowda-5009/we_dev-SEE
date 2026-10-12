@@ -12,6 +12,8 @@ const API_URL = API_ROOT.endsWith('/api')
   ? API_ROOT
   : `${API_ROOT}/api`
 
+const BUCKET = 'profile-photos'
+
 function Chat() {
   const [profile, setProfile] = useState(null)
   const [teams, setTeams] = useState([])
@@ -20,16 +22,16 @@ function Chat() {
   const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
+  const [avatarByEmail, setAvatarByEmail] = useState({})
 
   useEffect(() => {
     loadProfileAndTeams()
   }, [])
 
-  // Get a valid access token for backend requests
   async function getAuthHeaders(json = false) {
     const {
       data: { session },
-      error,
+      error
     } = await supabase.auth.getSession()
 
     if (error) throw error
@@ -40,7 +42,7 @@ function Chat() {
 
     return {
       ...(json ? { 'Content-Type': 'application/json' } : {}),
-      Authorization: `Bearer ${session.access_token}`,
+      Authorization: `Bearer ${session.access_token}`
     }
   }
 
@@ -50,7 +52,7 @@ function Chat() {
 
       const {
         data: { user },
-        error: userError,
+        error: userError
       } = await supabase.auth.getUser()
 
       if (userError || !user?.email) {
@@ -83,12 +85,11 @@ function Chat() {
         role:
           profileData?.role ||
           user.user_metadata?.role ||
-          'member',
+          'member'
       }
 
       setProfile(currentProfile)
 
-      // Load approved memberships
       const { data: memberships, error: membershipError } =
         await supabase
           .from('team_members')
@@ -99,7 +100,7 @@ function Chat() {
       if (membershipError) {
         throw new Error(
           'Unable to load memberships: ' +
-            membershipError.message
+          membershipError.message
         )
       }
 
@@ -108,17 +109,17 @@ function Chat() {
           (memberships || [])
             .map(member => member.team_id)
             .filter(id => id !== null && id !== undefined)
-        ),
+        )
       ]
 
       if (teamIds.length === 0) {
         setTeams([])
         setSelectedTeam(null)
         setMessages([])
+        setAvatarByEmail({})
         return
       }
 
-      // Load only teams with approved memberships
       const { data: teamData, error: teamsError } =
         await supabase
           .from('teams')
@@ -154,14 +155,77 @@ function Chat() {
     }
   }
 
-  // Load messages with authentication
+  // Load small profile avatars for the message senders.
+  async function loadMessageAvatars(messageRows) {
+    try {
+      const emails = [
+        ...new Set(
+          (messageRows || [])
+            .map(item => item.email || item.sender_email)
+            .filter(Boolean)
+            .map(email => email.trim().toLowerCase())
+        )
+      ]
+
+      if (emails.length === 0) return
+
+      const { data: profiles, error } = await supabase
+        .from('profiles')
+        .select('email, name, avatar_path, avatar_preset')
+        .in('email', emails)
+
+      if (error) {
+        console.error('Unable to load chat avatars:', error.message)
+        return
+      }
+
+      const avatarUpdates = {}
+
+      for (const person of profiles || []) {
+        if (!person.email) continue
+
+        const key = person.email.toLowerCase()
+        let photoUrl = ''
+
+        if (person.avatar_path) {
+          const { data, error: signedError } =
+            await supabase.storage
+              .from(BUCKET)
+              .createSignedUrl(person.avatar_path, 3600)
+
+          if (!signedError) {
+            photoUrl = data?.signedUrl || ''
+          } else {
+            console.error(
+              'Unable to sign profile photo:',
+              signedError.message
+            )
+          }
+        }
+
+        avatarUpdates[key] = {
+          name: person.name || '',
+          photoUrl,
+          preset: person.avatar_preset || ''
+        }
+      }
+
+      setAvatarByEmail(previous => ({
+        ...previous,
+        ...avatarUpdates
+      }))
+    } catch (error) {
+      console.error('Error loading message avatars:', error)
+    }
+  }
+
   async function loadMessages(teamId, emailOverride) {
     if (!teamId) return
 
     try {
       const {
         data: { user },
-        error,
+        error
       } = await supabase.auth.getUser()
 
       if (error || !user?.email) {
@@ -174,7 +238,7 @@ function Chat() {
 
       const params = new URLSearchParams({
         team_id: String(teamId),
-        email,
+        email
       })
 
       const headers = await getAuthHeaders()
@@ -189,11 +253,14 @@ function Chat() {
       if (!response.ok) {
         throw new Error(
           data.error ||
-            `Unable to load messages (HTTP ${response.status}).`
+          `Unable to load messages (HTTP ${response.status}).`
         )
       }
 
-      setMessages(Array.isArray(data) ? data : [])
+      const rows = Array.isArray(data) ? data : []
+
+      setMessages(rows)
+      await loadMessageAvatars(rows)
     } catch (error) {
       console.error('Error loading messages:', error.message)
       setMessages([])
@@ -215,7 +282,6 @@ function Chat() {
     await loadMessages(team.id, profile?.email)
   }
 
-  // Send messages with authentication
   async function sendMessage(event) {
     event.preventDefault()
 
@@ -237,8 +303,8 @@ function Chat() {
           sender: profile.name || profile.email,
           message: trimmedMessage,
           team_id: selectedTeam.id,
-          email: profile.email,
-        }),
+          email: profile.email
+        })
       })
 
       const data = await response.json().catch(() => ({}))
@@ -246,15 +312,23 @@ function Chat() {
       if (!response.ok) {
         throw new Error(
           data.error ||
-            `Unable to send message (HTTP ${response.status}).`
+          `Unable to send message (HTTP ${response.status}).`
         )
+      }
+
+      const sentMessage = {
+        ...data,
+        sender: data.sender || profile.name,
+        email: data.email || profile.email,
+        message: data.message || trimmedMessage
       }
 
       setMessages(previousMessages => [
         ...previousMessages,
-        data,
+        sentMessage
       ])
 
+      await loadMessageAvatars([sentMessage])
       setMessage('')
     } catch (error) {
       console.error('Error sending message:', error.message)
@@ -268,6 +342,44 @@ function Chat() {
     if (selectedTeam && profile?.email) {
       await loadMessages(selectedTeam.id, profile.email)
     }
+  }
+
+  function getSenderAvatar(item) {
+    const email = (
+      item.email ||
+      item.sender_email ||
+      ''
+    ).trim().toLowerCase()
+
+    const avatar = avatarByEmail[email]
+
+    if (avatar?.photoUrl) {
+      return (
+        <img
+          className="chat-sender-avatar-image"
+          src={avatar.photoUrl}
+          alt={`${item.sender || 'User'} profile`}
+          onError={event => {
+            event.currentTarget.style.display = 'none'
+          }}
+        />
+      )
+    }
+
+    const emoji = avatar?.preset
+
+    const initials = (
+      item.sender ||
+      avatar?.name ||
+      email.split('@')[0] ||
+      'U'
+    ).trim().charAt(0).toUpperCase()
+
+    return (
+      <span className="chat-sender-avatar-fallback">
+        {emoji || initials || 'U'}
+      </span>
+    )
   }
 
   return (
@@ -319,18 +431,8 @@ function Chat() {
 
         {selectedTeam && (
           <div className="dashboard-card">
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                gap: '12px',
-                marginBottom: '15px',
-              }}
-            >
-              <h2 style={{ margin: 0 }}>
-                💻 {selectedTeam.name} Chat
-              </h2>
+            <div className="chat-heading">
+              <h2>💻 {selectedTeam.name} Chat</h2>
 
               <button
                 type="button"
@@ -340,67 +442,38 @@ function Chat() {
               </button>
             </div>
 
-            <div
-              style={{
-                height: '400px',
-                overflowY: 'auto',
-                marginBottom: '15px',
-                padding: '15px',
-                border: '1px solid #ddd',
-                borderRadius: '8px',
-                background: '#fafafa',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '10px',
-                boxSizing: 'border-box',
-              }}
-            >
+            <div className="chat-message-list">
               {messages.length === 0 ? (
                 <p>No messages yet. Start the conversation!</p>
               ) : (
                 messages.map((item, index) => (
                   <div
+                    className="chat-message-row"
                     key={item.id ?? `${item.sender}-${index}`}
-                    style={{
-                      padding: '10px 12px',
-                      borderRadius: '8px',
-                      background: '#f0f0f0',
-                      flexShrink: 0,
-                    }}
                   >
-                    <strong>{item.sender}</strong>
+                    <div className="chat-sender-avatar">
+                      {getSenderAvatar(item)}
+                    </div>
 
-                    <p
-                      style={{
-                        margin: '5px 0 0',
-                        wordBreak: 'break-word',
-                        whiteSpace: 'pre-wrap',
-                      }}
-                    >
-                      {item.message}
-                    </p>
+                    <div className="chat-message-content">
+                      <strong>{item.sender || 'User'}</strong>
+
+                      <p>{item.message}</p>
+                    </div>
                   </div>
                 ))
               )}
             </div>
 
             <form
+              className="chat-message-form"
               onSubmit={sendMessage}
-              style={{
-                display: 'flex',
-                gap: '10px',
-                width: '100%',
-              }}
             >
               <input
                 type="text"
                 placeholder="Type your message..."
                 value={message}
                 onChange={event => setMessage(event.target.value)}
-                style={{
-                  flex: 1,
-                  minWidth: 0,
-                }}
                 disabled={sending}
               />
 

@@ -1,3 +1,4 @@
+
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Sidebar from '../components/Sidebar'
@@ -282,6 +283,31 @@ function Team() {
     return '👥'
   }
 
+  // Reusable display for uploaded photos, selected avatars, and initials.
+  function MemberAvatar({ member, className = 'teams-avatar' }) {
+    const [imageFailed, setImageFailed] = useState(false)
+
+    const initial = (
+      member?.name ||
+      member?.email ||
+      'U'
+    ).trim().charAt(0).toUpperCase()
+
+    return (
+      <span className={className}>
+        {member?.avatar_url && !imageFailed ? (
+          <img
+            src={member.avatar_url}
+            alt={member.name || 'Team member'}
+            onError={() => setImageFailed(true)}
+          />
+        ) : (
+          <span>{member?.avatar_preset || initial || '👤'}</span>
+        )}
+      </span>
+    )
+  }
+
   return (
     <div className="dashboard teams-page">
       <Sidebar />
@@ -311,7 +337,6 @@ function Team() {
           <section className="dashboard-card teams-panel create-team-panel">
             <div className="teams-section-heading">
               <div className="teams-heading-icon purple-icon">＋</div>
-
               <div>
                 <h2>Create a team</h2>
                 <p>Start a workspace and invite your teammates.</p>
@@ -321,7 +346,6 @@ function Team() {
             <div className="teams-form">
               <div className="teams-field">
                 <label htmlFor="team-name">Team name</label>
-
                 <input
                   id="team-name"
                   type="text"
@@ -336,7 +360,6 @@ function Team() {
                 <label htmlFor="team-description">
                   Description <span>(optional)</span>
                 </label>
-
                 <textarea
                   id="team-description"
                   value={description}
@@ -348,7 +371,6 @@ function Team() {
 
               <div className="teams-field">
                 <label htmlFor="user-search">Add existing users</label>
-
                 <div className="teams-search-row">
                   <input
                     id="user-search"
@@ -363,7 +385,6 @@ function Team() {
                     }}
                     placeholder="Search by name or email"
                   />
-
                   <button
                     type="button"
                     className="teams-secondary-button"
@@ -395,11 +416,7 @@ function Team() {
                             onChange={() => toggleMember(profile)}
                           />
 
-                          <span className="teams-avatar">
-                            {(profile.name || profile.email || '?')
-                              .charAt(0)
-                              .toUpperCase()}
-                          </span>
+                          <MemberAvatar member={profile} />
 
                           <span className="teams-user-info">
                             <strong>{profile.name || 'User'}</strong>
@@ -415,13 +432,11 @@ function Team() {
                 </div>
               )}
 
-              {search.trim() &&
-                profiles.length === 0 &&
-                !searching && (
-                  <p className="teams-empty-search">
-                    No users found yet. Select Search to look for registered users.
-                  </p>
-                )}
+              {search.trim() && profiles.length === 0 && !searching && (
+                <p className="teams-empty-search">
+                  No users found yet. Select Search to look for registered users.
+                </p>
+              )}
 
               {selectedMembers.length > 0 && (
                 <p className="teams-selected-count">
@@ -442,7 +457,6 @@ function Team() {
                 <div className="teams-created-code">
                   <span>Your latest team invitation code</span>
                   <strong>{createdCode}</strong>
-
                   <button
                     type="button"
                     className="teams-secondary-button"
@@ -463,7 +477,6 @@ function Team() {
           <section className="dashboard-card teams-panel join-team-panel">
             <div className="teams-section-heading">
               <div className="teams-heading-icon teal-icon">↗</div>
-
               <div>
                 <h2>Join a team</h2>
                 <p>Have an invitation code? Request to join a workspace.</p>
@@ -472,7 +485,6 @@ function Team() {
 
             <div className="teams-field">
               <label htmlFor="join-code">Invitation code</label>
-
               <input
                 id="join-code"
                 type="text"
@@ -536,20 +548,15 @@ function Team() {
             <div className="teams-grid">
               {teams.map((team, index) => (
                 <article className="teams-team-card" key={team.id}>
-                  <div
-                    className={`teams-team-icon teams-color-${index % 6}`}
-                  >
+                  <div className={`teams-team-icon teams-color-${index % 6}`}>
                     {getTeamIcon(team)}
                   </div>
 
                   <div className="teams-team-details">
                     <h3>{team.name}</h3>
-                    <p>
-                      {team.description || 'No description added yet.'}
-                    </p>
+                    <p>{team.description || 'No description added yet.'}</p>
                   </div>
 
-                  {/* INVITATION CODE ON EVERY TEAM CARD */}
                   <div
                     style={{
                       marginTop: '14px',
@@ -594,9 +601,7 @@ function Team() {
                         onClick={() => copyTeamCode(team)}
                         disabled={!team.join_code}
                       >
-                        {copiedTeam === team.id
-                          ? '✓ Copied!'
-                          : 'Copy Code'}
+                        {copiedTeam === team.id ? '✓ Copied!' : 'Copy Code'}
                       </button>
                     </div>
 
@@ -643,11 +648,10 @@ function Team() {
                             className="teams-member-row"
                             key={member.id || member.email || memberIndex}
                           >
-                            <span className="teams-avatar">
-                              {(member.name || member.email || '?')
-                                .charAt(0)
-                                .toUpperCase()}
-                            </span>
+                            <MemberAvatar
+                              member={member}
+                              className="teams-member-avatar"
+                            />
 
                             <div className="teams-user-info">
                               <div
@@ -682,9 +686,7 @@ function Team() {
 
                               <small className="teams-member-role">
                                 {member.role || 'Member'}
-                                {member.status
-                                  ? ` · ${member.status}`
-                                  : ''}
+                                {member.status ? ` · ${member.status}` : ''}
                               </small>
                             </div>
                           </div>

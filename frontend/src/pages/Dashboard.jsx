@@ -1,3 +1,4 @@
+
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { supabase } from '../supabase'
 import '../css/dashboard.css'
@@ -17,6 +18,9 @@ function Dashboard() {
   const [fileCount, setFileCount] = useState(0)
   const [loading, setLoading] = useState(false)
   const [userName, setUserName] = useState('User')
+  const [userAvatar, setUserAvatar] = useState('')
+  const [userAvatarPreset, setUserAvatarPreset] = useState('')
+  const [avatarFailed, setAvatarFailed] = useState(false)
   const [visibleTeamsCount, setVisibleTeamsCount] = useState(5)
 
   const [adminTeams, setAdminTeams] = useState([])
@@ -68,6 +72,7 @@ function Dashboard() {
     return data
   }, [getAccessToken])
 
+  // Load the logged-in user's name and profile avatar.
   const loadUser = useCallback(async () => {
     try {
       const {
@@ -77,16 +82,39 @@ function Dashboard() {
 
       if (error) throw error
 
-      if (user) {
-        setUserName(
-          user.user_metadata?.name ||
-          user.user_metadata?.full_name ||
-          user.email?.split('@')[0] ||
-          'User'
-        )
+      if (!user) return
+
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('name, avatar_path, avatar_preset')
+        .eq('user_id', user.id)
+        .maybeSingle()
+
+      if (profileError) throw profileError
+
+      const name =
+        profile?.name ||
+        user.user_metadata?.name ||
+        user.user_metadata?.full_name ||
+        user.email?.split('@')[0] ||
+        'User'
+
+      setUserName(name)
+      setUserAvatarPreset(profile?.avatar_preset || '')
+      setUserAvatar('')
+      setAvatarFailed(false)
+
+      if (profile?.avatar_path) {
+        const { data, error: imageError } = await supabase.storage
+          .from('profile-photos')
+          .createSignedUrl(profile.avatar_path, 3600)
+
+        if (imageError) throw imageError
+
+        setUserAvatar(data?.signedUrl || '')
       }
     } catch (error) {
-      console.error('Error loading user:', error.message)
+      console.error('Error loading user profile:', error.message)
     }
   }, [])
 
@@ -382,6 +410,11 @@ function Dashboard() {
     loadApprovals()
     loadMessageCount()
 
+    // Keep the dashboard avatar in sync with profile edits.
+    const handleProfileUpdated = () => loadUser()
+
+    window.addEventListener('profile-updated', handleProfileUpdated)
+
     const approvalInterval = setInterval(loadApprovals, 15000)
 
     const channel = supabase
@@ -399,6 +432,10 @@ function Dashboard() {
 
     return () => {
       clearInterval(approvalInterval)
+      window.removeEventListener(
+        'profile-updated',
+        handleProfileUpdated
+      )
       supabase.removeChannel(channel)
     }
   }, [loadUser, loadDashboard, loadApprovals, loadMessageCount])
@@ -450,9 +487,25 @@ function Dashboard() {
   return (
     <div className="dashboard-content">
       <header className="dashboard-header">
-        <div>
-          <h1>Good morning, {userName} 👋</h1>
-          <p>Here's what's happening with your teams today.</p>
+        <div className="dashboard-greeting">
+          <div className="dashboard-user-avatar">
+            {userAvatar && !avatarFailed ? (
+              <img
+                src={userAvatar}
+                alt={`${userName}'s profile`}
+                onError={() => setAvatarFailed(true)}
+              />
+            ) : (
+              <span>
+                {userAvatarPreset || userName.charAt(0).toUpperCase()}
+              </span>
+            )}
+          </div>
+
+          <div>
+            <h1>Good morning, {userName} 👋</h1>
+            <p>Here's what's happening with your teams today.</p>
+          </div>
         </div>
 
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
@@ -491,6 +544,7 @@ function Dashboard() {
             onClick={() => {
               loadDashboard()
               loadApprovals()
+              loadUser()
             }}
             disabled={loading}
           >

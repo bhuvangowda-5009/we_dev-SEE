@@ -710,3 +710,257 @@
     animation: none !important;
   }
 }
+
+/* Profile page action buttons */
+.profile-actions,
+.profile-buttons,
+.profile-button-group {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.profile-actions button,
+.profile-buttons button,
+.profile-button-group button {
+  min-height: 38px;
+  padding: 9px 17px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s,
+    transform 0.2s;
+}
+
+.profile-actions button:hover,
+.profile-buttons button:hover,
+.profile-button-group button:hover {
+  transform: translateY(-1px);
+}
+
+/* Save Changes */
+.profile-actions button[type="submit"],
+.profile-buttons button[type="submit"],
+.profile-button-group button[type="submit"] {
+  background: #2563eb;
+  color: #fff;
+  border: 1px solid #2563eb;
+}
+
+.profile-actions button[type="submit"]:hover,
+.profile-buttons button[type="submit"]:hover,
+.profile-button-group button[type="submit"]:hover {
+  background: #1d4ed8;
+}
+
+/* Cancel */
+.profile-actions button[type="button"],
+.profile-buttons button[type="button"],
+.profile-button-group button[type="button"] {
+  background: #fff;
+  color: #374151;
+  border: 1px solid #d1d5db;
+}
+
+.profile-actions button[type="button"]:hover,
+.profile-buttons button[type="button"]:hover,
+.profile-button-group button[type="button"]:hover {
+  background: #f3f4f6;
+}
+
+/* Logout */
+.profile-logout-button {
+  background: #fff1f2;
+  color: #be123c;
+  border: 1px solid #fecdd3;
+  border-radius: 8px;
+  padding: 9px 17px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.profile-logout-button:hover {
+  background: #ffe4e6;
+}
+
+/* Chat header */
+.chat-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 15px;
+}
+
+.chat-heading h2 {
+  margin: 0;
+  font-size: 20px;
+}
+
+/* Scrollable messages area */
+.chat-message-list {
+  height: 400px;
+  overflow-y: auto;
+  margin-bottom: 15px;
+  padding: 15px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #f9fafb;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  box-sizing: border-box;
+}
+
+/* Each message and avatar */
+.chat-message-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  flex-shrink: 0;
+}
+
+/* Medium-small circular avatar */
+.chat-sender-avatar {
+  width: 42px;
+  height: 42px;
+  min-width: 42px;
+  border-radius: 50%;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #e0e7ff;
+  color: #3730a3;
+  border: 1px solid #dbeafe;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.chat-sender-avatar-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.chat-sender-avatar-fallback {
+  font-size: 20px;
+  line-height: 1;
+}
+
+/* Message body */
+.chat-message-content {
+  min-width: 0;
+  flex: 1;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  overflow-wrap: anywhere;
+}
+
+.chat-message-content strong {
+  display: block;
+  margin-bottom: 5px;
+  color: #111827;
+  font-size: 13px;
+}
+
+.chat-message-content p {
+  margin: 0;
+  color: #374151;
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Message input */
+.chat-message-form {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+}
+
+.chat-message-form input {
+  flex: 1;
+  min-width: 0;
+}
+
+.chat-message-form button {
+  flex-shrink: 0;
+}
+
+@media (max-width: 480px) {
+  .chat-message-list {
+    height: 360px;
+    padding: 10px;
+  }
+
+  .chat-sender-avatar {
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+  }
+
+  .chat-message-row {
+    gap: 8px;
+  }
+
+  .chat-heading h2 {
+    font-size: 17px;
+  }
+}
+
+.dashboard-greeting {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+}
+
+.dashboard-user-avatar {
+  width: 58px;
+  height: 58px;
+  min-width: 58px;
+  border-radius: 50%;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #e0e7ff;
+  color: #3730a3;
+  font-size: 26px;
+  font-weight: 600;
+  border: 2px solid #dbeafe;
+}
+
+.dashboard-user-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.dashboard-greeting h1 {
+  margin-top: 0;
+}
+
+@media (max-width: 480px) {
+  .dashboard-greeting {
+    gap: 10px;
+  }
+
+  .dashboard-user-avatar {
+    width: 48px;
+    height: 48px;
+    min-width: 48px;
+    font-size: 22px;
+  }
+}

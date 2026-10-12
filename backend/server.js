@@ -71,6 +71,33 @@ async function getProfileForUser(user) {
   }
 }
 
+// ==================== PROFILE AVATAR HELPERS ====================
+
+// The profile-photos bucket is private.
+// Never return a public URL for these photos.
+async function addAvatarUrl(profile) {
+  const avatarPath = profile?.avatar_path || null
+  let avatarUrl = null
+
+  if (avatarPath) {
+    const { data, error } = await supabase.storage
+      .from('profile-photos')
+      .createSignedUrl(avatarPath, 3600)
+
+    if (error) {
+      console.error('Create profile avatar URL error:', error.message)
+    } else {
+      avatarUrl = data?.signedUrl || null
+    }
+  }
+
+  return {
+    ...profile,
+    avatar_url: avatarUrl,
+    avatar_preset: profile?.avatar_preset || null
+  }
+}
+
 // ==================== MEMBERSHIP HELPERS ====================
 
 async function getMembership(teamId, email) {
@@ -212,7 +239,7 @@ app.get('/api/users/search', async (req, res) => {
 
     const { data, error } = await supabase
       .from('profiles')
-      .select('user_id, name, email')
+      .select('user_id, name, email, avatar_path, avatar_preset')
       .or(`name.ilike.%${safeQuery}%,email.ilike.%${safeQuery}%`)
       .neq('user_id', user.id)
       .limit(20)
@@ -222,7 +249,11 @@ app.get('/api/users/search', async (req, res) => {
       return res.status(500).json({ error: 'Unable to search users.' })
     }
 
-    res.json(data || [])
+    const results = await Promise.all(
+      (data || []).map(profile => addAvatarUrl(profile))
+    )
+
+    res.json(results)
   } catch (error) {
     console.error('User search error:', error.message)
     res.status(500).json({ error: 'User search failed.' })
@@ -809,7 +840,7 @@ app.patch('/api/join-requests/:requestId', async (req, res) => {
   }
 })
 
-// ==================== GET TEAM MEMBERS ====================
+// ==================== GET TEAM MEMBERS WITH AVATARS ====================
 
 app.get('/api/teams/:teamId/members', async (req, res) => {
   try {
@@ -839,23 +870,6 @@ app.get('/api/teams/:teamId/members', async (req, res) => {
       })
     }
 
-    const { data: leader, error: leaderError } = await supabase
-      .from('profiles')
-      .select('email')
-      .eq('user_id', team.created_by)
-      .maybeSingle()
-
-    if (leaderError) {
-      console.error('Load team leader error:', leaderError.message)
-      return res.status(500).json({
-        error: 'Unable to load team leader details.'
-      })
-    }
-
-    const leaderEmail = String(leader?.email || '')
-      .trim()
-      .toLowerCase()
-
     const { data: members, error: membersError } = await supabase
       .from('team_members')
       .select('id, team_id, name, email, role, status')
@@ -870,38 +884,66 @@ app.get('/api/teams/:teamId/members', async (req, res) => {
       })
     }
 
-    // Fetch the latest profile name for each team member.
+    const memberEmails = [
+      ...new Set(
+        (members || [])
+          .map(member => String(member.email || '').trim().toLowerCase())
+          .filter(Boolean)
+      )
+    ]
+
+    // Fetch profile details and avatars in one query.
+    let profilesByEmail = new Map()
+
+    if (memberEmails.length) {
+      const { data: profileRows, error: profileError } = await supabase
+        .from('profiles')
+        .select('user_id, name, email, avatar_path, avatar_preset')
+        .in('email', memberEmails)
+
+      if (profileError) {
+        console.error('Load member profiles error:', profileError.message)
+      } else {
+        profilesByEmail = new Map(
+          (profileRows || []).map(row => [
+            String(row.email || '').trim().toLowerCase(),
+            row
+          ])
+        )
+      }
+    }
+
+    // Determine the leader by the team's created_by user ID.
+    const { data: leaderProfile, error: leaderError } = await supabase
+      .from('profiles')
+      .select('email')
+      .eq('user_id', team.created_by)
+      .maybeSingle()
+
+    if (leaderError) {
+      console.error('Load team leader error:', leaderError.message)
+    }
+
+    const leaderEmail = String(leaderProfile?.email || '')
+      .trim()
+      .toLowerCase()
+
     const updatedMembers = await Promise.all(
       (members || []).map(async member => {
-        const email = String(member.email || '').trim()
+        const email = String(member.email || '').trim().toLowerCase()
+        const memberProfile = profilesByEmail.get(email)
 
-        if (!email) {
-          return {
-            ...member,
-            is_leader: false
-          }
-        }
-
-        const { data: memberProfile, error: profileError } =
-          await supabase
-            .from('profiles')
-            .select('name')
-            .ilike('email', email)
-            .maybeSingle()
-
-        if (profileError) {
-          console.error(
-            `Load profile name error for ${email}:`,
-            profileError.message
-          )
-        }
+        const avatar = await addAvatarUrl({
+          avatar_path: memberProfile?.avatar_path || null,
+          avatar_preset: memberProfile?.avatar_preset || null
+        })
 
         return {
           ...member,
           name: memberProfile?.name?.trim() || member.name || 'Team member',
-          is_leader:
-            Boolean(leaderEmail) &&
-            email.toLowerCase() === leaderEmail
+          avatar_url: avatar.avatar_url,
+          avatar_preset: avatar.avatar_preset,
+          is_leader: Boolean(leaderEmail) && email === leaderEmail
         }
       })
     )
@@ -914,6 +956,7 @@ app.get('/api/teams/:teamId/members', async (req, res) => {
     })
   }
 })
+
 // ==================== GET TASKS ====================
 
 app.get('/api/tasks', async (req, res) => {
@@ -1197,8 +1240,6 @@ app.post('/api/messages', async (req, res) => {
 })
 
 // ==================== DASHBOARD FILE COUNT ====================
-// Files are stored in the `files` bucket under <teamId>/<filename>.
-// Count files only for teams accessible to the authenticated user.
 
 app.get('/api/files/count', async (req, res) => {
   try {
@@ -1415,4 +1456,3 @@ if (!process.env.VERCEL) {
     console.log(`TeamHub backend running on http://localhost:${PORT}`)
   })
 }
-

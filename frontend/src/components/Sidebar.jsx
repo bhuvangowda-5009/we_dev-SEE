@@ -4,8 +4,14 @@ import { Link } from 'react-router-dom'
 import { supabase } from '../supabase'
 import '../css/components.css'
 
+const BUCKET = 'profile-photos'
+
 function Sidebar() {
   const [profileName, setProfileName] = useState('User')
+  const [avatarPath, setAvatarPath] = useState('')
+  const [avatarPreset, setAvatarPreset] = useState('')
+  const [avatarUrl, setAvatarUrl] = useState('')
+  const [imageFailed, setImageFailed] = useState(false)
 
   const loadProfile = useCallback(async () => {
     try {
@@ -16,13 +22,16 @@ function Sidebar() {
 
       if (userError || !user) {
         setProfileName('User')
+        setAvatarPath('')
+        setAvatarPreset('')
+        setAvatarUrl('')
+        setImageFailed(false)
         return
       }
 
-      // Look up the profile using the authenticated user's ID.
       const { data, error } = await supabase
         .from('profiles')
-        .select('name')
+        .select('name, avatar_path, avatar_preset')
         .eq('user_id', user.id)
         .maybeSingle()
 
@@ -37,27 +46,37 @@ function Sidebar() {
         'User'
 
       setProfileName(latestName)
+      setAvatarPreset(data?.avatar_preset || '')
+      setAvatarPath(data?.avatar_path || '')
+      setAvatarUrl('')
+      setImageFailed(false)
+
+      if (data?.avatar_path) {
+        const { data: signedData, error: signedError } =
+          await supabase.storage
+            .from(BUCKET)
+            .createSignedUrl(data.avatar_path, 3600)
+
+        if (signedError) {
+          console.error('Error loading sidebar photo:', signedError.message)
+        } else {
+          setAvatarUrl(signedData?.signedUrl || '')
+        }
+      }
     } catch (error) {
       console.error('Unexpected sidebar profile error:', error)
     }
   }, [])
 
   useEffect(() => {
-    // Load the current name when the sidebar appears.
     loadProfile()
 
-    // Update immediately after a profile edit.
-    const handleProfileUpdated = event => {
-      if (event.detail?.name) {
-        setProfileName(event.detail.name)
-      } else {
-        loadProfile()
-      }
+    const handleProfileUpdated = () => {
+      loadProfile()
     }
 
     window.addEventListener('profile-updated', handleProfileUpdated)
 
-    // Reload the name when the authentication session changes.
     const {
       data: { subscription }
     } = supabase.auth.onAuthStateChange(() => {
@@ -87,11 +106,21 @@ function Sidebar() {
       </nav>
 
       <div className="sidebar-profile">
-        <div className="avatar">
-          {profileName.charAt(0).toUpperCase()}
+        <div className="avatar sidebar-user-avatar">
+          {avatarUrl && !imageFailed ? (
+            <img
+              src={avatarUrl}
+              alt={`${profileName}'s profile`}
+              onError={() => setImageFailed(true)}
+            />
+          ) : (
+            <span>
+              {avatarPreset || profileName.charAt(0).toUpperCase()}
+            </span>
+          )}
         </div>
 
-        <div>
+        <div className="sidebar-profile-info">
           <strong>{profileName}</strong>
           <small>Workspace Member</small>
         </div>

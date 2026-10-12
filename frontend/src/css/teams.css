@@ -1030,3 +1030,53 @@
     align-items: center;
   }
 }
+.teams-member-avatar {
+  width: 42px;
+  height: 42px;
+  flex-shrink: 0;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #f3f4f6;
+  font-size: 24px;
+}
+
+.teams-member-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.teams-member-avatar {
+  width: 42px;
+  height: 42px;
+  min-width: 42px;
+  flex-shrink: 0;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #f3f4f6;
+  font-size: 23px;
+}
+
+.teams-member-avatar img,
+.teams-avatar img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+.teams-member-avatar > span,
+.teams-avatar > span {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+}
