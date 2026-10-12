@@ -834,7 +834,9 @@ app.get('/api/teams/:teamId/members', async (req, res) => {
     }
 
     if (!team) {
-      return res.status(404).json({ error: 'Team not found.' })
+      return res.status(404).json({
+        error: 'Team not found.'
+      })
     }
 
     const { data: leader, error: leaderError } = await supabase
@@ -844,34 +846,67 @@ app.get('/api/teams/:teamId/members', async (req, res) => {
       .maybeSingle()
 
     if (leaderError) {
+      console.error('Load team leader error:', leaderError.message)
       return res.status(500).json({
-        error: 'Unable to load team leader.'
+        error: 'Unable to load team leader details.'
       })
     }
 
-    const leaderEmail = (leader?.email || '').trim().toLowerCase()
+    const leaderEmail = String(leader?.email || '')
+      .trim()
+      .toLowerCase()
 
-    const { data, error } = await supabase
+    const { data: members, error: membersError } = await supabase
       .from('team_members')
       .select('id, team_id, name, email, role, status')
       .eq('team_id', teamId)
       .eq('status', 'approved')
       .order('id', { ascending: true })
 
-    if (error) {
+    if (membersError) {
+      console.error('Load members error:', membersError.message)
       return res.status(500).json({
         error: 'Unable to load team members.'
       })
     }
 
-    res.json(
-      (data || []).map(member => ({
-        ...member,
-        is_leader:
-          Boolean(leaderEmail) &&
-          (member.email || '').trim().toLowerCase() === leaderEmail
-      }))
+    // Fetch the latest profile name for each team member.
+    const updatedMembers = await Promise.all(
+      (members || []).map(async member => {
+        const email = String(member.email || '').trim()
+
+        if (!email) {
+          return {
+            ...member,
+            is_leader: false
+          }
+        }
+
+        const { data: memberProfile, error: profileError } =
+          await supabase
+            .from('profiles')
+            .select('name')
+            .ilike('email', email)
+            .maybeSingle()
+
+        if (profileError) {
+          console.error(
+            `Load profile name error for ${email}:`,
+            profileError.message
+          )
+        }
+
+        return {
+          ...member,
+          name: memberProfile?.name?.trim() || member.name || 'Team member',
+          is_leader:
+            Boolean(leaderEmail) &&
+            email.toLowerCase() === leaderEmail
+        }
+      })
     )
+
+    res.json(updatedMembers)
   } catch (error) {
     console.error('Load members error:', error.message)
     res.status(500).json({
@@ -879,7 +914,6 @@ app.get('/api/teams/:teamId/members', async (req, res) => {
     })
   }
 })
-
 // ==================== GET TASKS ====================
 
 app.get('/api/tasks', async (req, res) => {
